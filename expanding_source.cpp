@@ -8,7 +8,8 @@
 #include "gerlumph.hpp"
 
 
-int main(int argc,char* argv[]){
+int main(int argc,char* argv[])
+{
 
   /*
     Requires:
@@ -51,10 +52,14 @@ int main(int argc,char* argv[]){
   fin.close();
 
   std::vector<double> phig;
-  for(int m=0;m<maps.size();m++){
-    if( maps[m]["id"].asString() != "none" ){
+  for(int m=0;m<maps.size();m++)
+  {
+    if( maps[m]["id"].asString() != "none" )
+    {
       phig.push_back( (multiple_images[m]["phig"].asDouble() + 90) ); // convert phig from EoN to normal cartesian
-    } else {
+    } 
+    else 
+    {
       phig.push_back( 0.0 ); // I need this line
     }
   }
@@ -78,7 +83,8 @@ int main(int argc,char* argv[]){
 
   // Expansion velocities
   std::vector<double> v_expand(Nfilters);
-  for(int k=0;k<Nfilters;k++){
+  for(int k=0;k<Nfilters;k++)
+  {
     std::string name = root["instruments"][k]["name"].asString();
     
   }
@@ -95,11 +101,14 @@ int main(int argc,char* argv[]){
   
   // Maximum sized profile and consequent maxOffset
   double rhalf_max = 0.0;
-  for(int m=0;m<maps.size();m++){
+  for(int m=0;m<maps.size();m++)
+  {
     int size = rhalfs[m].size();
-    if( size > 0 ){
-      if( rhalfs[m][size-1] > rhalf_max ){
-	rhalf_max = rhalfs[m][size-1].asDouble();
+    if( size > 0 )
+    {
+      if( rhalfs[m][size-1] > rhalf_max )
+      {
+	      rhalf_max = rhalfs[m][size-1].asDouble();
       }
     }
   }
@@ -112,18 +121,22 @@ int main(int argc,char* argv[]){
   //=============== BEGIN:MAP LOOP =======================
   Json::Value images;
   Json::Value maps_locs;
-  for(int m=0;m<maps.size();m++){
-    if( maps[m]["id"].asString() == "none" ){
-
+  for(int m=0;m<maps.size();m++)
+  {
+    if( maps[m]["id"].asString() == "none" )
+    {
       Json::Value image;
-      for(int k=0;k<Nfilters;k++){
- 	std::string instrument_name = root["instruments"][k]["name"].asString();
-	image[instrument_name] = Json::Value(Json::arrayValue);
+      for(int k=0;k<Nfilters;k++)
+      {
+ 	      std::string instrument_name = root["instruments"][k]["name"].asString();
+	      image[instrument_name] = Json::Value(Json::arrayValue);
       }
       images.append(image);
       maps_locs.append(Json::Value(Json::arrayValue));
       
-    } else {
+    } 
+    else 
+    {
       gerlumph::MagnificationMap map(maps[m]["id"].asString(),Rein);
       
       // Get maximum profile offset
@@ -140,68 +153,77 @@ int main(int argc,char* argv[]){
 
       double** raw_signal  = (double**) malloc(Nfixed*sizeof(double*));
       double** raw_dsignal = (double**) malloc(Nfixed*sizeof(double*));
-      for(int f=0;f<Nfixed;f++){
-	raw_signal[f]  = (double*) malloc(Nrhalf*sizeof(double));
-	raw_dsignal[f] = (double*) malloc(Nrhalf*sizeof(double));
+      for(int f=0;f<Nfixed;f++)
+      {
+	      raw_signal[f]  = (double*) malloc(Nrhalf*sizeof(double));
+	      raw_dsignal[f] = (double*) malloc(Nrhalf*sizeof(double));
       }
 
-      for(int r=0;r<Nrhalf;r++){
-	double rhalf = rhalfs[m][r].asDouble(); // half light radius in 10^14cm
-	gerlumph::UniformDisc profile(map.pixSizePhys,rhalf,incl,orient); // shape of the brightness profile
+      for(int r=0;r<Nrhalf;r++)
+      {
+	      double rhalf = rhalfs[m][r].asDouble(); // half light radius in 10^14cm
+	      gerlumph::UniformDisc profile(map.pixSizePhys,rhalf,incl,orient); // shape of the brightness profile
 
-	gerlumph::EffectiveMap emap(maxOffset,&map);
-	gerlumph::Kernel kernel(map.Nx,map.Ny);
-	kernel.setKernel(&profile);
-	map.convolve(&kernel,&emap);
-	
-	fixed.setEmap(&emap);
-	fixed.extract();
-	for(int f=0;f<Nfixed;f++){
-	  raw_signal[f][r]  = fixed.m[f];
-	  raw_dsignal[f][r] = fixed.dm[f];
-	}
+        gerlumph::EffectiveMap emap(maxOffset,&map);
+        gerlumph::Kernel kernel(map.Nx,map.Ny);
+        kernel.setKernel(&profile);
+        map.convolve(&kernel,&emap);
+        
+        fixed.setEmap(&emap);
+        fixed.extract();
+        for(int f=0;f<Nfixed;f++)
+        {
+          raw_signal[f][r]  = fixed.m[f];
+          raw_dsignal[f][r] = fixed.dm[f];
+        }
       }
       
-      for(int k=0;k<Nfilters;k++){
-	// Store light curve for filter for image
-	std::string instrument_name = root["instruments"][k]["name"].asString();
-	Json::Value lcs;
+      for(int k=0;k<Nfilters;k++)
+      {
+        // Store light curve for filter for image
+        std::string instrument_name = root["instruments"][k]["name"].asString();
+        Json::Value lcs;
 
-	// Convert rhalfs to time using the filter's velocity
-	Json::Value jtime;
-	for(int r=0;r<Nrhalf;r++){
-	  double rhalf = rhalfs[m][r].asDouble(); // half light radius in 10^14cm
-	  double v_expand = 8.64*root["point_source"]["variability"]["extrinsic"]["v_expand"][instrument_name].asDouble();   // velocity in 10^14 cm / day
-	  double t = rhalf/v_expand; // in days
-	  jtime.append(t); // Keeping time normalized to 0.
-	  //jtime.append(t + tins_min); // Converting to the intrinsic light curve's time
-	  if( t > duration ){
-	    break; // Check after assignment to make sure the full duration is included in the light curve
-	  }
-	}
+        // Convert rhalfs to time using the filter's velocity
+        Json::Value jtime;
+        for(int r=0;r<Nrhalf;r++)
+        {
+          double rhalf = rhalfs[m][r].asDouble(); // half light radius in 10^14cm
+          double v_expand = 8.64*root["point_source"]["variability"]["extrinsic"]["v_expand"][instrument_name].asDouble();   // velocity in 10^14 cm / day
+          double t = rhalf/v_expand; // in days
+          jtime.append(t); // Keeping time normalized to 0.
+          //jtime.append(t + tins_min); // Converting to the intrinsic light curve's time
+          if( t > duration )
+          {
+            break; // Check after assignment to make sure the full duration is included in the light curve
+          }
+        }
 
-	for(int f=0;f<Nfixed;f++){
-	  Json::Value lc;
-	  Json::Value jsignal;
-	  Json::Value jdsignal;
-	  for(int t=0;t<jtime.size();t++){
-	    jsignal.append( raw_signal[f][t] );
-	    jdsignal.append( raw_dsignal[f][t] );
-	  }
-	  lc["time"]    = jtime;
-	  lc["signal"]  = jsignal;
-	  lc["dsignal"] = jdsignal;
-	  lcs.append(lc);
-	}
-	image[instrument_name] = lcs;
+        for(int f=0;f<Nfixed;f++)
+        {
+          Json::Value lc;
+          Json::Value jsignal;
+          Json::Value jdsignal;
+          for(int t=0;t<jtime.size();t++)
+          {
+            jsignal.append( raw_signal[f][t] );
+            jdsignal.append( raw_dsignal[f][t] );
+          }
+          lc["time"]    = jtime;
+          lc["signal"]  = jsignal;
+          lc["dsignal"] = jdsignal;
+          lcs.append(lc);
+        }
+	      image[instrument_name] = lcs;
       }
       printf("Map %d done.\n",m);
       images.append(image);
 	
       // Some clean up
-      for(int f=0;f<Nfixed;f++){
-	delete(raw_signal[f]);
-	delete(raw_dsignal[f]);
+      for(int f=0;f<Nfixed;f++)
+      {
+        delete(raw_signal[f]);
+        delete(raw_dsignal[f]);
       }
       delete(raw_signal);
       delete(raw_dsignal);
@@ -209,11 +231,12 @@ int main(int argc,char* argv[]){
       // Fixed locations (different for each map, but always the same orientation - minus the shear angle),
       // in normalized units (0 to 1)
       Json::Value locs;
-      for(int i=0;i<Nfixed;i++){
-	Json::Value point;
-	point["x"] = (maxOffset + fixed.A[i].x)/map.Nx;
-	point["y"] = (maxOffset + fixed.A[i].y)/map.Ny;
-	locs.append(point);
+      for(int i=0;i<Nfixed;i++)
+      {
+        Json::Value point;
+        point["x"] = (maxOffset + fixed.A[i].x)/map.Nx;
+        point["y"] = (maxOffset + fixed.A[i].y)/map.Ny;
+        locs.append(point);
       }
       maps_locs.append(locs);
     }
@@ -221,16 +244,21 @@ int main(int argc,char* argv[]){
   //================= END:MAP LOOP =======================
 
   // Write light curves
-  for(int k=0;k<Nfilters;k++){
+  for(int k=0;k<Nfilters;k++)
+  {
     std::string instrument_name = root["instruments"][k]["name"].asString();
 
     Json::Value filter;
-    for(int m=0;m<maps.size();m++){
+    for(int m=0;m<maps.size();m++)
+    {
       Json::Value lcs;
-      if( maps[m]["id"].asString() == "none" ){
-	lcs = Json::Value(Json::arrayValue);
-      } else {
-	lcs = images[m][instrument_name];
+      if( maps[m]["id"].asString() == "none" )
+      {
+	      lcs = Json::Value(Json::arrayValue);
+      } 
+      else 
+      {
+	      lcs = images[m][instrument_name];
       }
       filter.append(lcs);      
     }
