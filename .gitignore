@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# python venv
+microLC_venv/
