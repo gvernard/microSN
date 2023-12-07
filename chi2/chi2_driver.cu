@@ -1,7 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "chi2_functions.cu"
+#include "chi2_functions.cuh"
 #include "util.cuh"
 
 
