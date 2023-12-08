@@ -88,3 +88,7 @@ libtool
 # can automatically generate from config.status script
 # (which is called by configure script))
 Makefile
+
+
+# python venv
+microLC_venv/
