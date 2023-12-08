@@ -32,6 +32,7 @@ int main(int argc, char* argv[])
   if (cuda_error("cudaMallocManaged(*mu2)", false, __FILE__, __LINE__)) return -1;
 
 
+  // Defining fake data (actual values don't matter)
   for (int f = 0; f < F; f++)
   {
     for (int t = 0; t < T; t++)
@@ -40,7 +41,8 @@ int main(int argc, char* argv[])
       df_obs[f * T + t] = 1.1;
     }
   }
-  
+
+  // Defining fake N simulated light curves (actual values don't matter)
   for (int n = 0; n < N; n++)
   {
     for (int f = 0; f < F; f++)
@@ -73,4 +75,3 @@ int main(int argc, char* argv[])
   return 0;
 
 }
-

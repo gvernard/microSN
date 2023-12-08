@@ -61,7 +61,7 @@ aclocal.m4
 config.log
 config.status
 /config.sub
-configure
+onfigure
 /configure.scan
 /depcomp
 /install-sh

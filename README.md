@@ -4,4 +4,8 @@ Software package to model microlensing lightcurves from lensed Supernovae and Qu
 
 ## Requirements
 
-Requires the [gerlumph++](https://github.com/gvernard/gerlumphpp) library and the CUDA nvcc compiler. 
+Requires the CUDA nvcc compiler, the cfitsio and CCfits libraries.
+
+## TODO
+
+Test LC simulator in Single Precision mode.
