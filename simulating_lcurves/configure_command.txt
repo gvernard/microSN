@@ -1,0 +1,6 @@
+#!/bin/bash
+
+mylibs=/home/giorgos/myLibraries/libraries
+MAP_PATH=/home/giorgos/unbacked_up_data/gerlumph_mirror/
+
+./configure --with-cfitsio=${mylibs}/cfitsio --with-CCfits=${mylibs}/CCfits --with-map-path=${MAP_PATH}
