@@ -119,6 +119,7 @@ bool getChi2GPU(float* f_obs, float* df_obs, float* mu1, float* mu2, int N, int 
   t_elapsed = stopwatch.stop(false);
   std::cout << "Elapsed time: " << t_elapsed << std::endl;
 
+  // This summation can be replaced by a thrust reduce function
   for (int i = 0; i < N; i++)
   {
     for (int j = 0; j < N; j++)
