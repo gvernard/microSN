@@ -16,6 +16,18 @@ ac_new_CPPFLAGS="-Iinclude"
 ac_new_LDFLAGS=""
 ac_new_LIBS=""
 
+AC_ARG_WITH([jsoncpp],
+    [AS_HELP_STRING([--with-jsoncpp=prefix],[give the path to the jsoncpp library and header files.])],
+    [
+	ac_new_CPPFLAGS+=" -I${withval}/include"
+	ac_new_LDFLAGS+=" -L${withval}/lib -Wl,-rpath -Wl,${withval}/lib"
+	ac_new_LIBS+=" -ljsoncpp"
+    ],
+    [
+	AC_CHECK_LIB(jsoncpp,main,[],[AC_MSG_ERROR("you need to have the jsoncpp library installed.")])
+	AC_CHECK_HEADERS(json/json.h,[],[AC_MSG_ERROR("you need to have the jsoncpp header files installed.")])
+    ])
+
 AC_ARG_WITH([CCfits],
     [AS_HELP_STRING([--with-CCfits=prefix],[give the path to the CCfits library and header files.])],
     [

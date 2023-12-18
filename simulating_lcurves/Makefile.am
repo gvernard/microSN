@@ -17,7 +17,9 @@ libmagmap_la_CPPFLAGS = -Iinclude
 libcommon_la_SOURCES = \
 	src/mpd.cpp \
 	src/profile.cpp \
-	src/image.cpp
+	src/image.cpp \
+	src/chi2.cpp \
+	src/locations.cpp
 libcommon_la_CXXFLAGS = -std=c++17 -fPIC -g -frounding-math
 libcommon_la_CPPFLAGS = -Iinclude
 libcommon_la_LIBADD = -lmagmap
@@ -33,7 +35,8 @@ libcommon_la_LIBADD = -lmagmap
 
 LINK = $(LIBTOOL) --mode=link $(CC) -o $@ @CUDA_LIBS@ $(CPPFLAGS)
 libgpu_la_SOURCES = \
-	src/variability_models.cu
+	src/variability_models.cu \
+	src/chi2_functions.cu
 libgpu_la_CPPFLAGS = -Iinclude
 libgpu_la_LIBADD  = @CUDA_LIBS@ -lcommon
 

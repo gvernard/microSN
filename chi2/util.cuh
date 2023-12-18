@@ -50,6 +50,20 @@ bool cuda_error(const char* name, bool sync, const char* file, const int line)
 }
 
 /******************************************************************************
+Normal error checking
+
+\param name -- to print in error msg
+\param file -- the file being run
+\param line -- line number of the source code where the error is given
+
+\return bool -- always true for error
+******************************************************************************/
+bool normal_error(const char* name, const char* file, const int line){
+  std::cerr << "Error: '" << name << "' failed at " << file << ":" << line << "\n";
+  return true;
+}
+
+/******************************************************************************
 set the number of threads per block for the kernel
 
 \param threads -- reference to threads
