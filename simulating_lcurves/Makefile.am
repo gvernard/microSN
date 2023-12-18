@@ -36,7 +36,8 @@ libcommon_la_LIBADD = -lmagmap
 LINK = $(LIBTOOL) --mode=link $(CC) -o $@ @CUDA_LIBS@ $(CPPFLAGS)
 libgpu_la_SOURCES = \
 	src/variability_models.cu \
-	src/chi2_functions.cu
+	src/chi2_functions.cu \
+	src/util.cu
 libgpu_la_CPPFLAGS = -Iinclude
 libgpu_la_LIBADD  = @CUDA_LIBS@ -lcommon
 

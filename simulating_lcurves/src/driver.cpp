@@ -9,6 +9,7 @@
 #include "variability_models.hpp"
 #include "chi2_functions.hpp"
 #include "locations.hpp"
+#include "util.hpp"
 
 int main(int argc,char* argv[]){
 
@@ -78,6 +79,10 @@ int main(int argc,char* argv[]){
   double DS = input["DS"].asDouble();
   double DLS = input["DLS"].asDouble();
   double Dfac = sqrt(DS*DLS/DL);
+
+  long int total = get_total_gpu_mem();
+  printf("Total GPU memory: %ld (bytes)\n",total);
+  
   //******************************************************************************************
 
 
