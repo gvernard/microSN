@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib> // for std::size_t
 #include <iostream>
 
 
@@ -92,5 +93,20 @@ void set_blocks(dim3& threads, dim3& blocks, int x = 1, int y = 1, int z = 1)
     blocks.x = (x - 1) / threads.x + 1;
     blocks.y = (y - 1) / threads.y + 1;
     blocks.z = (z - 1) / threads.z + 1;
+}
+
+/******************************************************************************
+get the amount of available memory, in bytes, on the gpu
+
+\return free -- std::size_t of the number of available bytes free
+******************************************************************************/
+std::size_t get_free_gpu_mem()
+{
+    std::size_t free = 0;
+    std::size_t total = 0;
+
+    cudaMemGetInfo (&free, &total);
+
+    return free;
 }
 

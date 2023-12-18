@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
   float* mu2 = nullptr;
   cudaMallocManaged((void**)&mu2, N * F * T * sizeof(float));
   if (cuda_error("cudaMallocManaged(*mu2)", false, __FILE__, __LINE__)) return -1;
-
+  
 
   // Defining fake data (actual values don't matter)
   for (int f = 0; f < F; f++)
@@ -65,6 +65,8 @@ int main(int argc, char* argv[])
   getChi2GPU(f_obs, df_obs, mu1, mu2, N, F, T, likelihood);
   std::cout << "Likelihood: " << *likelihood << std::endl;
 
+  std::size_t free = get_free_gpu_mem();
+  std::cout << "number of free bytes in gpu memory: " << free << "\n";
 
   *likelihood = 0;
 
