@@ -11,50 +11,57 @@
 static int myfft2d_r2c(cufftHandle* plan, cufftDoubleReal* data, cufftDoubleComplex* Fdata);
 static int myfft2d_c2r(cufftHandle* plan, cufftDoubleComplex* Fdata, cufftDoubleReal* data);
 __global__ void kernelMultiplyFFTs(cufftDoubleComplex* Fmap,cufftDoubleComplex* Fkernel,double norm);
-__global__ void sampleConvmap(cufftDoubleReal* convmap,double* LC,int k,int Nprof,int* loc_x,int* loc_y,int Nx,int Nloc);
+__global__ void sampleConvmap(cufftDoubleReal* convmap,double* LC,double* DLC,int k,int Nprof,int* loc_x,int* loc_y,int Nx,int Nloc);
 
 
 /*
 INPUT:
- 1. File location for the magnification map
+ 1. File location/ID for the magnification map
  2. A vector<double> of the profile half-light radii in units of RE (length of Nprof)
- 3. A vector<int> of pixel indices to sample from (length of Nloc)
- 4. The shape of the profile (could easily be a vector of time-dependent profiles)
+ 3. The shape of the profile (could easily be a vector of time-dependent profiles)
+ 4. The number of sampled locations (Nloc)
+ 5. Two arrays of the x and y pixel indices to sample from (length of Nloc)
+ 6. A pointer to the CPU memory to store the output - size of Nprof*Nloc
+ 6. A pointer to the CPU memory to store the adjacent difference output - size of (Nprof-1)*Nloc
 
 
 FUNCTION:
 First, some memory needs to be allocated on the GPU:
-1. to read in a magnification map.
-2. to store the convolution kernel (changes per loop iteration, see below).
-   There may be extra memory needed to store intermediate products of the convolution.
-3. An 'LC' array of size Nprof x Nloc to store the light curves.
+1. To store the Fourier transform of the magnification map.
+2. To store the Fourier transform of the convolution kernel (changes per loop iteration, see below).
+3. To store the convolved map. This memory is also used to read-in the map and kernel before transforming them.
+4. There is extra memory needed to run the CUFFT plans.
+5. An 'LC' array of size Nprof x Nloc to store the light curves.
 
-Inside a loop over the profile sizes it:
-- creates the profile according to the given shape (CPU)
-- creates the corredponding kernel at the predefined memory location (GPU)
-- performs the convolution (GPU)
-- samples the convolved map at the given pixels and stores them in the LC array (GPU)
+First, we get the Fourier transform of the map and store it on the GPU.
+Inside a loop over the profile sizes we:
+- create the profile according to the given shape
+- create the corredponding kernel at the predefined memory location
+- get the Fourier transform of the kernel
+- multiply it with the Fourier transform of the map
+- get inverse Fourier transform of the product
+- sample the convolved map at the given pixels and store them in the LC array
 
 
 OUTPUT:
-The LC array.
-
+The LC array with size Nloc*Nprof.
+The array of differences between adjacent profiles for each light curve with size Nloc*(Nprof-1).
 
 NOTES: 
-1. The final LC arrays should persist in GPU memory after this code quits - how can we achieve this?
-2. This code should ensure early on that there is enough memory on the GPU for it to run.
-3. We could transfer the sampled pixel values to the CPU after each convolution.
-   This will allow for the highest possible number of Nloc to be sampled.
+- This code should ensure early on that there is enough memory on the GPU for it to run.
 */
 
-void expanding_source(std::string map_id,std::vector<double> sizes,std::string shape,int Nloc,int* sample_loc_x,int* sample_loc_y,double* LC){
+void expanding_source(std::string map_id,std::vector<double> sizes,std::string shape,int Nloc,int* sample_loc_x,int* sample_loc_y,double* LC,double* DLC){
+
+  // ############################################## Initialization ############################################################
   int Nprof = sizes.size();
+
+  // Important definitions for the grids of blocks and blocks of threads
   dim3 block_mult(1000); // Nx/f
   dim3 grid_mult(10,5001); // f,Ny/2+1
   dim3 block_samp(1024);
   dim3 grid_samp((int) ceil(Nloc/1024));
-  
-  
+    
   // We read the magnification map stored in the gerlumph format (map.bin and map_meta.dat)
   double dum_rein = 1.0;
   gerlumph::MagnificationMap map(map_id,dum_rein);
@@ -63,14 +70,11 @@ void expanding_source(std::string map_id,std::vector<double> sizes,std::string s
   double norm = Nx*Ny;
   //map.writeImageFITS("map.fits",10);
   //gerlumph::MagnificationMap dum_map = map; // A test map on the CPU
-
   
   // Calculate the maximum offset in pixels
   double max_size = sizes.back(); // in units of Rein
   int maxOffset = (int) ceil( (Nx/map.width)*max_size );
   gerlumph::Kernel kernel(map.Nx,map.Ny);
-
-
 
   // Create profile parameters
   std::map<std::string,std::string> profile_pars;
@@ -79,7 +83,9 @@ void expanding_source(std::string map_id,std::vector<double> sizes,std::string s
   profile_pars.insert(std::pair<std::string,std::string>("pixSizePhys", std::to_string(map.pixSizePhys)));
   profile_pars.insert(std::pair<std::string,std::string>("incl", "0"));
   profile_pars.insert(std::pair<std::string,std::string>("orient", "0"));
+  // ##########################################################################################################################
 
+  
   
   // ############################################## Memory Allocation on the GPU ##############################################
   printf("Used GPU memory:  %d (Mb)\n",(int) get_used_gpu_mem());
@@ -115,7 +121,9 @@ void expanding_source(std::string map_id,std::vector<double> sizes,std::string s
   // Allocate memory: for the final LC array
   double* d_LC;
   cudaMalloc(&d_LC,Nprof*Nloc*sizeof(double));
-  printf("Allocated memory: Light curves, Nprof*Nloc <double>: %d (Mb)\n",Nprof*Nloc*8);
+  double* d_DLC;
+  cudaMalloc(&d_DLC,(Nprof-1)*Nloc*sizeof(double));
+  printf("Allocated memory: Light curves, (2Nprof-1)*Nloc <double>: %d (Mb)\n",(2*Nprof-1)*Nloc*8);
 
   // Create CUFFT plans
   cufftResult result;
@@ -138,7 +146,6 @@ void expanding_source(std::string map_id,std::vector<double> sizes,std::string s
   // ##########################################################################################################################
 
 
-  
 
   // ############################################## Operations of the GPU #####################################################
   // Do the Fourier transform of the emap and store it on the GPU
@@ -171,15 +178,16 @@ void expanding_source(std::string map_id,std::vector<double> sizes,std::string s
     //dum_map.writeImageFITS("conv_"+std::to_string(k)+".fits",10);
 
     // Sample convolved map
-    sampleConvmap<<<grid_samp,block_samp>>>(any_map_GPU,d_LC,k,Nprof,loc_x,loc_y,Nx,Nloc);
+    sampleConvmap<<<grid_samp,block_samp>>>(any_map_GPU,d_LC,d_DLC,k,Nprof,loc_x,loc_y,Nx,Nloc);
   }
   // ##########################################################################################################################
 
 
 
-  
+  // ############################################## Fetch light curves ########################################################
   cudaMemcpy(LC,d_LC,Nprof*Nloc*sizeof(double),cudaMemcpyDeviceToHost);
-
+  cudaMemcpy(DLC,d_DLC,(Nprof-1)*Nloc*sizeof(double),cudaMemcpyDeviceToHost);
+  // ##########################################################################################################################
 
 
   
@@ -194,7 +202,6 @@ void expanding_source(std::string map_id,std::vector<double> sizes,std::string s
   cufftDestroy(plan_c2r);
   // ##########################################################################################################################
 }
-
 
 
 int myfft2d_r2c(cufftHandle* plan,cufftDoubleReal* data_GPU,cufftDoubleComplex* Fdata_GPU){
@@ -224,7 +231,7 @@ __global__ void kernelMultiplyFFTs(cufftDoubleComplex* Fmap,cufftDoubleComplex* 
 }
 
 
-__global__ void sampleConvmap(cufftDoubleReal* convmap,double* LC,int k,int Nprof,int* loc_x,int* loc_y,int Nx,int Nloc){
+__global__ void sampleConvmap(cufftDoubleReal* convmap,double* LC,double* DLC,int k,int Nprof,int* loc_x,int* loc_y,int Nx,int Nloc){
   // Stores the light curve in sizes of Nprof
   //unsigned int id = threadIdx.x;
   unsigned int id = blockIdx.x*blockDim.x+threadIdx.x;
@@ -233,6 +240,10 @@ __global__ void sampleConvmap(cufftDoubleReal* convmap,double* LC,int k,int Npro
     unsigned int j = loc_x[id];
     unsigned int index = i*Nx+j;
     LC[id*Nprof+k] = convmap[index];
+
+    if( k>0 ){
+      DLC[id*Nprof+k-1] = LC[id*Nprof+k] - LC[id*Nprof+k-1];
+    }
   }
 }
 

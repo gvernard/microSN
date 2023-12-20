@@ -58,10 +58,12 @@ int main(int argc,char* argv[]){
 
 
   // Define parameters and perform checks for chi2 and likelihood code 
-  int Nd = input["data"][0]["f"].size();
+  int Nd = input["data"][0]["d"].size();
   try {
     if( Nd >= 50 ){
       throw std::runtime_error("Number of data points is too large to fit in register memory!");
+    } else {
+      printf("Data length: %d\n",Nd);
     }
   } catch(std::exception &e) {
     std::cerr << e.what() << std::endl;
@@ -95,17 +97,23 @@ int main(int argc,char* argv[]){
   std::string map_id;
   map_id = "12115"; //                                                SAMPLED
   double* LCA = (double*) malloc(Nloc*Nprof*sizeof(double));
-  expanding_source(map_id,sizes,shape,Nloc,x,y,LCA);
+  double* DLCA = (double*) malloc(Nloc*(Nprof-1)*sizeof(double));
+  expanding_source(map_id,sizes,shape,Nloc,x,y,LCA,DLCA);
 
   // Call the LC simulator code for second map
   map_id = "12115"; //                                                SAMPLED
   double* LCB = (double*) malloc(Nloc*Nprof*sizeof(double));
-  expanding_source(map_id,sizes,shape,Nloc,x,y,LCB);
+  double* DLCB = (double*) malloc(Nloc*(Nprof-1)*sizeof(double));
+  expanding_source(map_id,sizes,shape,Nloc,x,y,LCB,DLCB);
 
+
+  // Calculate differences between profiles of simulated light curves
+
+  
   // Call the likelihood integration code
-  std::vector<double> M{1,0.85}; // in solar masses                   SAMPLED
-  std::vector<double> V{10000}; // in km/s                            SAMPLED
-  double like = get_like_single_pair(M,V,Dfac,Nd,d,t,s,Nprof,sizes.data(),Nloc,LCA,LCB);
+  std::vector<double> M{0.4,0.5}; // in solar masses                   SAMPLED
+  std::vector<double> V{1}; // in 10^5 km/s                           SAMPLED
+  double like = get_like_single_pair(M,V,Dfac,Nd,d,t,s,Nprof,sizes.data(),Nloc,LCA,LCB,DLCA,DLCB);
   //******************************************************************************************
 
 
@@ -131,5 +139,7 @@ int main(int argc,char* argv[]){
 
   free(LCA);
   free(LCB);
+  free(DLCA);
+  free(DLCB);
   return 0;
 }

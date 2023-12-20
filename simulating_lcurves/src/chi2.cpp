@@ -1,30 +1,39 @@
-#include <vector>
 #include <cmath>
+#include <vector>
+#include <iostream>
 
 #include "chi2_functions.hpp"
 
+
 /*
+Function to find the interpolation indices.
 
+INPUT:
+\param t -- Time steps already converted to dimensionless units [RE]
+\param x -- The sizes of the profiles in units of [RE]
+\param Nd -- The size of the data
+\param Nprof -- The number of profiles used in the convolutions
+\param ind -- An array of size Nd that will hold the interpolation indices
 
-*/
-  // Calculate partial differences within each LCA and LCB
+FUNCTION:
+Find the left index of the 'x' interval within which the transform t [in units of RE] falls.
 
-  // Calculate z for the combination of examples between LCA and LCB
-
-
-void find_indices(double t2x,double* t,double* x,int Nd,int Nprof,int* ind){
+OUTPUT:
+The array of interpolation indices.
+ */
+void find_indices(double* t,double* x,int Nd,int Nprof,int* ind){
   int i = 0;
-  double comp = t2x*t[0];
+  double comp = t[0];
   int j = 0;
   while( i<Nd && j<Nprof-1 ){
     if( x[j] <= comp && comp < x[j+1] ){
       ind[i] = j;
       i++;
-      comp = t2x*t[i];
+      comp = t[i];
     } else if( comp > x[Nprof-1] ){
       ind[i] = -1;
       i++;
-      comp = t2x*t[i];
+      comp = t[i];
     } else {
       j++;
     }
@@ -38,6 +47,27 @@ void find_indices(double t2x,double* t,double* x,int Nd,int Nprof,int* ind){
 /*******************************************************************************
 Kernel to calculate the chi-squared likelihood on the GPU.
 
+
+INPUT:
+\param M -- Vector of masses [in units of solar mass].
+\param V -- Vector of velocities [in units of km/s].
+\param Dfac -- Square root of the fraction of angular diameter distances:
+               DS*DLS/DL [in units of sqrt(Mpc)].
+\param Nd -- Size of the data.
+\param d -- Data values [dimensionless, it is the ratio of fluxes].
+\param t -- Data times [units of days].
+\param s -- Uncertainty of the measurements d
+            [dimensionless, d is the ratio of fluxes].
+\param Nprof -- Number of profiles for which light curves have been produced.
+                i.e. the number of steps in each simulated light curve.
+\param x -- The values of the profile sizes in units of [RE]
+\param Nloc -- Number of simulated light curves per magnification map.
+\param LCA -- The location in memory where the Nloc light curves
+              of length Nprof are stored (for one image).
+\param LCB -- Same as LCA.
+
+
+FUNCTION:
 We start with two arrays: t (Nd) and x (Nprof), describing the time of the data
 points and the half-light radius of the profiles (in units of RE).
 
@@ -49,50 +79,41 @@ We loop over these arrays to find where both are -1.
 This means that the combination of M and V leads to values t outside the range
 of our Nprof profiles. In this case, we assume that there is no microlensing
 magnification and our model, i.e. mu_A/mu_B, is equal to 1. There is no need 
-to perform these calculations on the GPU (true only if the t for both images
-corresponds to x outside our range), so we just add a straightforwardly computed 
-term, which is the sum of the data minus 1 over the uncertainty for these
-specific t values only, to the final chi squared at the end of the calculation.
+to perform these calculations on the GPU, which is true only if the t for both
+images corresponds to x outside our range. We simply straightforwardly compute
+the sum of the data minus 1 over the uncertainty for these specific t values only.
+This sum is added to the final chi squared at the end of the calculation.
 
-For the indices that are not -1 for both images we proceed with calling the
-GPU kernel, but first we shorten the arrays accordingly and calculate the 
-interpolation factors. The latter are fixed for each image.
+For the indices that are not -1 for both images, we first shorten the arrays
+accordingly and calculate the interpolation factors. The latter are fixed for
+each image.
 
 
-
-INPUT
-\param M -- Vector of masses [in units of solar mass].
-\param V -- Vector of velocities [in units of km/s].
-\param Dfac -- Square root of the fraction of angular diameter distances:
-               DL*DLS/DS [in units of sqrt(Mpc)].
-\param Nd -- Size of the data.
-\param d -- Data values [dimensionless, it is the ratio of fluxes].
-\param t -- Data times [units of s].
-\param s -- Uncertainty of the measurements d
-            [dimensionless, d is the ratio of fluxes].
-\param Nprof -- Number of profiles for which light curves have been produced.
-                i.e. the number of steps in each simulated light curve.
-\param x -- The values of the profile sizes in units of [RE]
-\param Nloc -- Number of simulated light curves per magnification map.
-\param LCA -- The location in memory where the Nloc light curves
-              of length Nprof are stored (for one image).
-\param LCB -- Same as LCA.
+OUTPUT:
+The likelihood value for given M and V.
 *******************************************************************************/
-double get_like_single_pair(std::vector<double> M,std::vector<double> V,double Dfac,int Nd,double* d,double* t,double* s,int Nprof,double* x,int Nloc,double* LCA,double* LCB){
+double get_like_single_pair(std::vector<double> M,std::vector<double> V,double Dfac,int Nd,double* d,double* t,double* s,int Nprof,double* x,int Nloc,double* LCA,double* LCB,double* DLCA,double* DLCB){
   double Rfac = 23.92865*Dfac; // in units of [10^14 cm / sqrt(M_solar)]
 
-  // Factors to transform time in units of [s] to units of the Einstein radius on the source plane [RE]
-  double t2xA = V[0]/(Rfac*sqrt(M[0]));
-  double t2xB = V[0]/(Rfac*sqrt(M[1]));
+  // Transform time from units of [d] to units of the Einstein radius on the source plane [RE]
+  // V must be in 10^5 km/s so that the final units of t2x are 1/d
+  double t2xA = V[0]*8.64/(Rfac*sqrt(M[0])); // units of [1/d]
+  double t2xB = V[0]*8.64/(Rfac*sqrt(M[1])); // units of [1/d]
+  double tA[Nd];
+  double tB[Nd];
+  for(int i=0;i<Nd;i++){
+    tA[i] = t2xA*t[i]; // units of RE
+    tB[i] = t2xB*t[i]; // units of RE
+  }
   
   // Match the Nd time values [s] to the Nprof simulated light curve steps [units of RE]
   int indA[Nd];
-  find_indices(t2xA,t,x,Nd,Nprof,indA);
+  find_indices(tA,x,Nd,Nprof,indA);
   int indB[Nd];
-  find_indices(t2xB,t,x,Nd,Nprof,indB);
+  find_indices(tB,x,Nd,Nprof,indB);
 
   // Check how many of the data times are within the simulated Nprof range (either image)
-  int Njp = 0;
+  int Njp = Nd;
   for(int i=0;i<Nd;i++){
     if( indA[i] == -1 && indB[i] == -1 ){
       Njp = i;
@@ -119,20 +140,24 @@ double get_like_single_pair(std::vector<double> M,std::vector<double> V,double D
   for(int i=0;i<Njp;i++){
     a = indA[i];
     if( a != -1 ){
-      facA[i] = (t2xA*t[i]-x[a])/(x[a+1]-x[a]);
+      facA[i] = (tA[i]-x[a])/(x[a+1]-x[a]);
     } else {
       facA[i] = 0;
     }
     b = indB[i];
     if( b != -1 ){
-      facB[i] = (t2xB*t[i]-x[b])/(x[b+1]-x[b]);
+      facB[i] = (tB[i]-x[b])/(x[b+1]-x[b]);
     } else {
       facB[i] = 0;
     }
   }
 
+
+  
   // Calculate integral over z on the GPU
-  double log_integral = calculate_chi2_GPU(Njp,indA,indB,facA,facB,d,s,Nloc,Nprof,LCA,LCB);
+  double log_integral = calculate_chi2_GPU(Njp,indA,indB,facA,facB,d,s,Nloc,Nprof,LCA,LCB,DLCA,DLCB);
+  double dum = calculate_chi2_CPU(Njp,indA,indB,facA,facB,d,s,Nloc,Nprof,LCA,LCB,DLCA,DLCB);
+
   
   // Add constant term to the integral
   if( Njp != Nd ){
