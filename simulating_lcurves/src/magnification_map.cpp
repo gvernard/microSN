@@ -1,7 +1,5 @@
 #include "magnification_map.hpp"
 
-using namespace gerlumph;
-
 MagnificationMap::MagnificationMap():path(MAP_PATH) {
   // do nothing. Just used to define the path.
 }
@@ -64,7 +62,6 @@ MagnificationMap::MagnificationMap(const MagnificationMap& other):path(other.pat
   }
 }
 
-
 double MagnificationMap::getPixSizePhys(std::string id,double Rein){
   // Read map metadata
   std::string file = MAP_PATH + id + "/mapmeta.dat";
@@ -75,6 +72,11 @@ double MagnificationMap::getPixSizePhys(std::string id,double Rein){
   myfile >> width;
   return Rein*width/Nx; // in units of [10^14 cm]
 }
+
+
+
+
+
 
 
 EffectiveMap::EffectiveMap(int offset,MagnificationMap* map){

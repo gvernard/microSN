@@ -1,6 +1,5 @@
 #include "image.hpp"
 
-using namespace gerlumph;
 
 void Image::writeImageBIN(const std::string filename,int sampling){
   int nNx = (int) (this->Nx/sampling);

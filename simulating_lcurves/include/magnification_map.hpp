@@ -18,70 +18,66 @@
 #include "mpd.hpp"
 #include "profile.hpp"
 
-namespace gerlumph {
+class EffectiveMap;
+class Kernel;
 
-  class EffectiveMap;
-  class Kernel;
+struct point {
+  // required in light_curve.hpp and fixed_locs.hpp where this file is included as a header
+  double x;
+  double y;
+};
 
-  struct point {
-    // required in light_curve.hpp and fixed_locs.hpp where this file is included as a header
-    double x;
-    double y;
-  };
-
-  class MagnificationMap : public Image {
-  public:
-    std::string id;
-    double k;
-    double g;
-    double s;
-    double width; // in Rein
-    double height; // in Rein
-    double avgmu;
-    double avgN;
-    double mu_th;
-    double pixSizePhys; // in units of [10^14 cm]
-    bool convolved;
-    const std::string path;
-
-    MagnificationMap();
-    MagnificationMap(std::string id,double Rein);
-    MagnificationMap(const MagnificationMap& other);
-
-    static double getPixSizePhys(std::string id,double Rein);
-    Mpd getFullMpd();
-    Mpd getBinnedMpd(int Nbins);
-    void convolve(Kernel* kernel,EffectiveMap* emap);
-    std::string printMapPath(){
-      return this->path;
-    }
-  };
+class MagnificationMap : public Image {
+public:
+  std::string id;
+  double k;
+  double g;
+  double s;
+  double width; // in Rein
+  double height; // in Rein
+  double avgmu;
+  double avgN;
+  double mu_th;
+  double pixSizePhys; // in units of [10^14 cm]
+  bool convolved;
+  const std::string path;
+  
+  MagnificationMap();
+  MagnificationMap(std::string id,double Rein);
+  MagnificationMap(const MagnificationMap& other);
+  
+  static double getPixSizePhys(std::string id,double Rein);
+  Mpd getFullMpd();
+  Mpd getBinnedMpd(int Nbins,double min,double max);
+  void convolve(Kernel* kernel,EffectiveMap* emap);
+  std::string printMapPath(){
+    return this->path;
+  }
+};
 
 
-  class EffectiveMap : public MagnificationMap {
-  public:
-    int top;    // top margin in pixels
-    int bottom; // bottom margin in pixels
-    int left;   // left margin in pixels
-    int right;  // right margin in pixels
+class EffectiveMap : public MagnificationMap {
+public:
+  int top;    // top margin in pixels
+  int bottom; // bottom margin in pixels
+  int left;   // left margin in pixels
+  int right;  // right margin in pixels
+  
+  EffectiveMap(int offset,MagnificationMap* map);
+  EffectiveMap(double d_offset,MagnificationMap* map);
+  EffectiveMap(int top,int bottom,int left,int right,MagnificationMap* map);
+};
 
-    EffectiveMap(int offset,MagnificationMap* map);
-    EffectiveMap(double d_offset,MagnificationMap* map);
-    EffectiveMap(int top,int bottom,int left,int right,MagnificationMap* map);
-  };
 
-
-  class Kernel : public Image{
-  public:
-    int hNx; // half width in pixels of corresponding profile
-    int hNy; // half height in pixels of corresponding profile
-
-    Kernel(int map_Nx,int map_Ny);
-    Kernel(int map_Nx,int map_Ny,BaseProfile* profile);
-
-    void setKernel(BaseProfile* profile);
-  };
-
-}
+class Kernel : public Image{
+public:
+  int hNx; // half width in pixels of corresponding profile
+  int hNy; // half height in pixels of corresponding profile
+  
+  Kernel(int map_Nx,int map_Ny);
+  Kernel(int map_Nx,int map_Ny,BaseProfile* profile);
+  
+  void setKernel(BaseProfile* profile);
+};
 
 #endif /* MAGNIFICATION_MAP_HPP */

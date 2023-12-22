@@ -2,8 +2,7 @@
 #include <vector>
 #include <iostream>
 
-#include "chi2_functions.hpp"
-
+#include "cpu_functions.hpp"
 
 /*
 Function to find the interpolation indices.
@@ -92,7 +91,7 @@ each image.
 OUTPUT:
 The likelihood value for given M and V.
 *******************************************************************************/
-double get_like_single_pair(std::vector<double> M,std::vector<double> V,double Dfac,int Nd,double* d,double* t,double* s,int Nprof,double* x,int Nloc,double* LCA,double* LCB,double* DLCA,double* DLCB){
+Chi2Vars setup_chi2_calculation(std::vector<double> M,std::vector<double> V,double Dfac,int Nd,double* d,double* t,double* s,int Nprof,double* x){
   double Rfac = 23.92865*Dfac; // in units of [10^14 cm / sqrt(M_solar)]
 
   // Transform time from units of [d] to units of the Einstein radius on the source plane [RE]
@@ -120,43 +119,40 @@ double get_like_single_pair(std::vector<double> M,std::vector<double> V,double D
       break;
     }
   }
+  Chi2Vars vars(Njp);
   
   // Shorten arrays from size of Nd to Njp: d, s, indA, indB
-  int new_indA[Njp];
-  int new_indB[Njp];
-  double new_d[Njp];
-  double new_s[Njp];
   for(int i=0;i<Njp;i++){
-    new_indA[i] = indA[i];
-    new_indB[i] = indB[i];
-    new_d[i] = d[i];
-    new_s[i] = s[i];
+    vars.indA[i] = indA[i];
+    vars.indB[i] = indB[i];
+    vars.new_d[i] = d[i];
+    vars.new_s[i] = s[i];
   }
   
   // Calculate the interpolation factors per image
   int a,b;
-  double facA[Njp];
-  double facB[Njp];
   for(int i=0;i<Njp;i++){
     a = indA[i];
     if( a != -1 ){
-      facA[i] = (tA[i]-x[a])/(x[a+1]-x[a]);
+      vars.facA[i] = (tA[i]-x[a])/(x[a+1]-x[a]);
     } else {
-      facA[i] = 0;
+      vars.facA[i] = 0;
     }
     b = indB[i];
     if( b != -1 ){
-      facB[i] = (tB[i]-x[b])/(x[b+1]-x[b]);
+      vars.facB[i] = (tB[i]-x[b])/(x[b+1]-x[b]);
     } else {
-      facB[i] = 0;
+      vars.facB[i] = 0;
     }
   }
 
+  return vars;
+}
 
+
+/*
   
   // Calculate integral over z on the GPU
-  double log_integral = calculate_chi2_GPU(Njp,indA,indB,facA,facB,d,s,Nloc,Nprof,LCA,LCB,DLCA,DLCB);
-  double dum = calculate_chi2_CPU(Njp,indA,indB,facA,facB,d,s,Nloc,Nprof,LCA,LCB,DLCA,DLCB);
 
   
   // Add constant term to the integral
@@ -170,12 +166,40 @@ double get_like_single_pair(std::vector<double> M,std::vector<double> V,double D
 
   return log_integral;
 }
+*/
 
 
 
 
+void calculate_chi2_CPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB){
+  int Nloc  = LCA->Nloc;
+  int Nprof = LCA->Nprof;
+  double mA,mB,tmp,chi2_val;
+  
+  for(int a=0;a<Nloc;a++){
+    for(int b=0;b<Nloc;b++){
 
+      chi2_val = 0.0;
+      for(int i=0;i<chi2_vars->Njp;i++){
+	if( chi2_vars->indA[i] == -1 ){
+	  mA = 1;
+	} else {
+	  mA = LCA->LC[a*Nprof+chi2_vars->indA[i]] + chi2_vars->facA[i]*LCA->DLC[a*Nprof+chi2_vars->indA[i]];
+	}
+	
+	if( chi2_vars->indB[i] == -1 ){
+	  mB = 1;
+	} else {
+	  mB = LCB->LC[b*Nprof+chi2_vars->indB[i]] + chi2_vars->facB[i]*LCB->DLC[b*Nprof+chi2_vars->indB[i]];
+	}
+	
+	tmp = (chi2_vars->new_d[i] - (mA/mB))/chi2_vars->new_s[i];
+	chi2_val += tmp*tmp;
+      }
+      chi2->values[a*Nloc+b] = chi2_val;
 
-
+    }
+  }
+}
 
 

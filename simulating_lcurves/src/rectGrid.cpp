@@ -6,8 +6,6 @@
 
 #include <iostream>
 
-using namespace gerlumph;
-
 // Definition of static variables:
 // 1st derivatives
 const std::vector<int>    Constants::derivative_1_forward_1_index({0,1});
