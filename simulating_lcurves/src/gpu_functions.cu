@@ -29,7 +29,7 @@ __constant__ double d_facB[50];
 __constant__ int d_indA[50];
 __constant__ int d_indB[50];
 
-__global__ void kernel_chi2(int loop_ind,int N,int Nprof,double* d_LCA,double* d_LCB,double* d_DLCA,double* d_DLCB,int Nloc,double* chi2_all);
+__global__ void kernel_chi2(int loop_ind,int N,int Nprof,double* d_LCA,double* d_LCB,double* d_DLCA,double* d_DLCB,int Nloc,double* chi2_all,unsigned int* sorted);
 __global__ void kernel_z(int k,int Nloc,int Nprof,double* d_LCA,double* d_LCB,double* d_z);
 __global__ void kernel_multiplyFFTs(cufftDoubleComplex* Fmap,cufftDoubleComplex* Fkernel,double norm);
 __global__ void kernel_sample(cufftDoubleReal* convmap,double* d_LC,double* d_DLC,int k,int Nprof,int* loc_x,int* loc_y,int Nx,int Nloc);
@@ -72,6 +72,7 @@ The array of differences between adjacent profiles for each light curve with siz
 
 NOTES: 
 - This code should ensure early on that there is enough memory on the GPU for it to run.
+- The first profile is ignored, that's why it's R1/2 should always be 0. The unconvolved maps are sampled instead.
 */
 
 void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::string shape,int Nloc,int* sample_loc_x,int* sample_loc_y,SimLC* LC){
@@ -83,8 +84,8 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
   dim3 block_mult(1000); // Nx/f
   dim3 grid_mult(10,5001); // f,Ny/2+1
   dim3 block_samp(1024);
-  dim3 grid_samp((int) ceil(Nloc/1024));
-    
+  dim3 grid_samp((int) ceil((double) Nloc/1024.0));
+  
   int Nx = map->Nx;
   int Ny = map->Ny;
   double norm = Nx*Ny;
@@ -156,6 +157,7 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
 
 
   printf("Used GPU memory:  %d (Mb)\n",(int) get_used_gpu_mem());
+  cudaDeviceSynchronize();
   // ##########################################################################################################################
 
 
@@ -163,10 +165,15 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
   // ############################################## Operations of the GPU #####################################################
   // Do the Fourier transform of the emap and store it on the GPU
   cudaMemcpy( any_map_GPU, map->data, Nx*Ny*sizeof(cufftDoubleReal), cudaMemcpyHostToDevice);
+  cudaDeviceSynchronize();
+  kernel_sample<<<grid_samp,block_samp>>>(any_map_GPU,LC->d_LC,LC->d_DLC,0,Nprof,loc_x,loc_y,Nx,Nloc);
+  cudaDeviceSynchronize();
   myfft2d_r2c(&plan_r2c,any_map_GPU,Fmap_GPU);
+  cudaDeviceSynchronize();
+
 
   // Loop over the kernels
-  for(int k=0;k<Nprof;k++){
+  for(int k=1;k<Nprof;k++){
     std::cout << "Profile: " << k << std::endl;
 
     // Create profile and kernel
@@ -177,14 +184,17 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
 
     // Fourier transform of kernel
     cudaMemcpy( any_map_GPU, kernel.data, Nx*Ny*sizeof(cufftDoubleReal), cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
     myfft2d_r2c(&plan_r2c,any_map_GPU,Fkernel_GPU);
-
+    cudaDeviceSynchronize();
+  
     // Multiply Fourier transforms of map and kernel
     kernel_multiplyFFTs<<<grid_mult,block_mult>>>(Fmap_GPU,Fkernel_GPU,norm);
     cudaDeviceSynchronize();
 
     // Get inverse Fourier transform of product
     myfft2d_c2r(&plan_c2r,Fkernel_GPU,any_map_GPU);
+    cudaDeviceSynchronize();
 
     // Transfer convolved map to CPU and write image.
     //cudaMemcpy(dum_map.data,convmap_GPU,Nx*Ny*sizeof(double),cudaMemcpyDeviceToHost);
@@ -192,6 +202,7 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
 
     // Sample convolved map
     kernel_sample<<<grid_samp,block_samp>>>(any_map_GPU,LC->d_LC,LC->d_DLC,k,Nprof,loc_x,loc_y,Nx,Nloc);
+    cudaDeviceSynchronize();
   }
   // ##########################################################################################################################
 
@@ -210,7 +221,7 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
 }
 
 
-void calculate_chi2_GPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB){
+void calculate_chi2_GPU(Chi2Vars* chi2_vars,Chi2* chi2,Chi2SortBins* sort_struct,SimLC* LCA,SimLC* LCB){
   int N = chi2_vars->Njp;
   int Nloc = LCA->Nloc;
   int Nprof = LCA->Nprof;
@@ -230,39 +241,53 @@ void calculate_chi2_GPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB){
 
 
   printf("Used GPU memory:  %d (Mb)\n",(int) get_used_gpu_mem());
+  cudaDeviceSynchronize();
   // ##########################################################################################################################
 
 
   
   // Call chi2 kernel
-  int Nblocks = (int) ceil(Nloc/1024);
+  int Nblocks = (int) ceil((double) Nloc/1024.0);
   for(int k=0;k<Nblocks;k++){
-    kernel_chi2<<<Nblocks,1024>>>(k,N,Nprof,LCA->d_LC,LCB->d_LC,LCA->d_DLC,LCB->d_DLC,Nloc,chi2->d_values);
+    kernel_chi2<<<Nblocks,1024>>>(k,N,Nprof,LCA->d_LC,LCB->d_LC,LCA->d_DLC,LCB->d_DLC,Nloc,chi2->d_values,sort_struct->d_sorted_ind);
+    cudaDeviceSynchronize();
   }
 }
 
 
-void test_chi2(Chi2* chi2,int offset,int N){
+void test_chi2(Chi2* chi2,int offset,int N,int Nloc){
   
   // Fetch some GPU chi2 terms and print them
-  double* test_chi2 = (double*) malloc(N*sizeof(double));
-  cudaMemcpy(test_chi2,chi2->d_values+offset,N*sizeof(double),cudaMemcpyDeviceToHost);
+  double* test_chi2 = (double*) malloc(Nloc*Nloc*sizeof(double));
+  cudaMemcpy(test_chi2,chi2->d_values,Nloc*Nloc*sizeof(double),cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
+
+  // Print GPU and CPU chi2 terms and their difference
+  printf("%10s %10s %10s %10s\n","index","GPU","CPU","diff");
   for(int i=0;i<N;i++){
-    std::cout << test_chi2[i] << std::endl;
+    double diff = test_chi2[offset+i] - chi2->values[offset+i];
+    printf("%d %10.3f %10.3f %10.3f\n",offset+i,test_chi2[offset+i],chi2->values[offset+i],diff);
   }
+
+  double tol = 1.e-8;
+  int counter_above = 0;
+  int counter_below = 0;
+  for(int i=0;i<Nloc*Nloc;i++){
+    double diff = test_chi2[i] - chi2->values[i];
+    if( abs(diff) > tol ){
+      counter_above++;
+    } else if( abs(diff) > 0.0 ){
+      counter_below++;
+    }
+  }
+  printf("Diff. above / below tolerance (%e): %d / %d\n",tol,counter_above,counter_below);
+  
   free(test_chi2);
-
-  std::cout << std::endl;
-
-  // Print CPU chi2 terms
-  for(int i=0;i<N;i++){
-    std::cout << chi2->values[offset+i] << std::endl;
-  }
 }
 
 
 
-void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,unsigned int* sorted,unsigned int* upper,unsigned int* n){
+void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sort_struct){
   int Nloc = LCA->Nloc;
   int Nprof = LCA->Nprof;
   
@@ -271,20 +296,19 @@ void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,unsigned int* sorted,un
 
 
   // ############################################## Calculate z ###############################################################
-  int Nblocks = (int) ceil(Nloc/1024);
+  int Nblocks = (int) ceil((double) Nloc/1024.0);
   for(int k=0;k<Nblocks;k++){
     kernel_z<<<Nblocks,1024>>>(k,Nloc,Nprof,LCA->d_LC,LCB->d_LC,d_z);
+    cudaDeviceSynchronize();
   }
   // ##########################################################################################################################
 
 
   // ############################################## Sort z and get indices ####################################################
-  thrust::device_vector<unsigned int> d_sorted(Nloc*Nloc);
-  thrust::sequence(d_sorted.begin(),d_sorted.end());
+  thrust::device_ptr<unsigned int> ptr_sorted = thrust::device_pointer_cast(sort_struct->d_sorted_ind);
+  thrust::sequence(ptr_sorted,ptr_sorted+Nloc*Nloc);
   thrust::device_ptr<double> d_ptr = thrust::device_pointer_cast(d_z);
-  thrust::sort_by_key(d_ptr,d_ptr + Nloc*Nloc, d_sorted.begin());
-  unsigned int* ptr_d_sorted = thrust::raw_pointer_cast(&d_sorted[0]);
-  cudaMemcpy(sorted,ptr_d_sorted,Nloc*Nloc*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  thrust::stable_sort_by_key(d_ptr,d_ptr + Nloc*Nloc,ptr_sorted);
   // ##########################################################################################################################
 
   
@@ -295,24 +319,41 @@ void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,unsigned int* sorted,un
   thrust::device_vector<unsigned int> d_upper(Nbins);
   thrust::upper_bound(d_ptr,d_ptr+Nloc*Nloc,d_bins.begin(),d_bins.end(),d_upper.begin());
   unsigned int* ptr_d_upper = thrust::raw_pointer_cast(&d_upper[0]);
-  cudaMemcpy(upper,ptr_d_upper,Nbins*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  cudaMemcpy(sort_struct->upper_ind,ptr_d_upper,Nbins*sizeof(unsigned int),cudaMemcpyDeviceToHost);
 
   thrust::device_vector<unsigned int> d_n(Nbins);
   thrust::adjacent_difference(d_upper.begin(),d_upper.end(),d_n.begin());
   unsigned int* ptr_d_n = thrust::raw_pointer_cast(&d_n[0]);
-  cudaMemcpy(n,ptr_d_n,Nbins*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  cudaMemcpy(sort_struct->n_per_bin,ptr_d_n,Nbins*sizeof(unsigned int),cudaMemcpyDeviceToHost);
   // ##########################################################################################################################
 
 
   cudaFree(d_z);
 }
 
+void sort_chi2_by_z_GPU(int Nloc,Chi2SortBins* sort_struct,Chi2* chi2){
+  // thrust::device_ptr<unsigned int> ptr_sorted = thrust::device_pointer_cast(sort_struct->d_sorted_ind);
+  // thrust::device_ptr<double> d_ptr = thrust::device_pointer_cast(chi2->d_values);
+  // thrust::sort_by_key(ptr_sorted,ptr_sorted + Nloc*Nloc,d_ptr);
+
+  double* tmp = (double*) malloc(Nloc*Nloc*sizeof(double));
+  cudaMemcpy(tmp,chi2->d_values,Nloc*Nloc*sizeof(double),cudaMemcpyDeviceToHost);
+  unsigned int* ind = (unsigned int*) malloc(Nloc*Nloc*sizeof(unsigned int));
+  cudaMemcpy(ind,sort_struct->d_sorted_ind,Nloc*Nloc*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  
+  for(int i=0;i<Nloc*Nloc;i++){
+    chi2->values[i] = tmp[ind[i]];
+  }
+  cudaMemcpy(chi2->d_values,chi2->values,Nloc*Nloc*sizeof(double),cudaMemcpyHostToDevice);
+
+  free(tmp);
+  free(ind);
+}
 
 void myfft2d_r2c(cufftHandle* plan,cufftDoubleReal* data_GPU,cufftDoubleComplex* Fdata_GPU){
   // Do the fourier transform on the GPU
   cufftResult result = cufftExecD2Z(*plan, data_GPU, Fdata_GPU);
   if (cuda_error("Cuda error: Failed to execut plan", false, __FILE__, __LINE__)) std::runtime_error("CUFFT Error: unable to execute plan");
-  cudaDeviceSynchronize();
 }
 
 
@@ -320,7 +361,6 @@ void myfft2d_c2r(cufftHandle* plan, cufftDoubleComplex* Fdata_GPU, cufftDoubleRe
   // Do the inverse fourier transform on the GPU
   cufftResult result = cufftExecZ2D(*plan, Fdata_GPU, data_GPU);
   if (cuda_error("Cuda error: Failed to execut plan", false, __FILE__, __LINE__)) std::runtime_error("CUFFT Error: unable to execute plan");
-  cudaDeviceSynchronize();
 }
 
 
@@ -356,54 +396,65 @@ __global__ void kernel_z(int loop_ind,int Nloc,int Nprof,double* d_LCA,double* d
   int tid = threadIdx.x;
   int bid = blockIdx.x;
   int a = bid*Nt + tid;
-
+  int b;
+  
   for(int j=0;j<Nt;j++){
-    int b = ((bid+loop_ind)%gridDim.x)*Nt + (tid+j)%Nt;
-    d_z[a*Nloc+b] = d_LCA[a*Nprof]/d_LCB[b*Nprof];
+    b = ((bid+loop_ind)%gridDim.x)*Nt + (tid+j)%Nt;
+    
+    if( a < Nloc && b < Nloc ){
+      d_z[a*Nloc+b] = d_LCA[a*Nprof]/d_LCB[b*Nprof];
+    }
   }
+  __syncthreads();
 }
 
-__global__ void kernel_chi2(int loop_ind,int N,int Nprof,double* d_LCA,double* d_LCB,double* d_DLCA,double* d_DLCB,int Nloc,double* chi2_all){
+__global__ void kernel_chi2(int loop_ind,int N,int Nprof,double* d_LCA,double* d_LCB,double* d_DLCA,double* d_DLCB,int Nloc,double* chi2_all,unsigned int* sorted){
   int Nt  = blockDim.x; // equal to 1024
   int tid = threadIdx.x;
   int bid = blockIdx.x;
   int a = bid*Nt + tid;
   double chi2,mB,tmp;
-  int b;
-
-  // Get all the values of mA just once for each thread
+  int b,sorted_index;
   double mA[50];
-  for(int i=0;i<N;i++){
-    // Interpolate magnification A
-    if( d_indA[i] == -1 ){
-      mA[i] = 1;
-    } else {
-      //mA[i] = LCA[a*Nprof+d_indA[i]] + d_facA[i]*( LCA[a*Nprof+d_indA[i]+1] - LCA[a*Nprof+d_indA[i]] );
-      mA[i] = d_LCA[a*Nprof+d_indA[i]] + d_facA[i]*d_DLCA[a*Nprof+d_indA[i]];
+
+  if( a < Nloc ){     
+    // Get all the values of mA just once for each thread
+    for(int i=0;i<N;i++){
+      // Interpolate magnification A
+      if( d_indA[i] == -1 ){
+	mA[i] = 1;
+      } else {
+	//mA[i] = LCA[a*Nprof+d_indA[i]] + d_facA[i]*( LCA[a*Nprof+d_indA[i]+1] - LCA[a*Nprof+d_indA[i]] );
+	mA[i] = d_LCA[a*Nprof+d_indA[i]] + d_facA[i]*d_DLCA[a*(Nprof-1)+d_indA[i]];
+      }
     }
   }
   __syncthreads();
-
-
+    
+    
   for(int j=0;j<Nt;j++){
     b = ((bid+loop_ind)%gridDim.x)*Nt + (tid+j)%Nt;
 
-    chi2 = 0.0;
-    for(int i=0;i<N;i++){
-      // Interpolate magnification B
-      if( d_indB[i] == -1 ){
-	mB = 1;
-      } else {
-	//mB = LCB[b*Nprof+d_indB[i]] + d_facB[i]*( LCB[b*Nprof+d_indB[i]+1] - LCB[b*Nprof+d_indB[i]] );
-	mB = d_LCB[b*Nprof+d_indB[i]] + d_facB[i]*d_DLCB[b*Nprof+d_indB[i]];
+    if( a < Nloc && b < Nloc ){
+      chi2 = 0.0;
+      for(int i=0;i<N;i++){
+	// Interpolate magnification B
+	if( d_indB[i] == -1 ){
+	  mB = 1;
+	} else {
+	  //mB = LCB[b*Nprof+d_indB[i]] + d_facB[i]*( LCB[b*Nprof+d_indB[i]+1] - LCB[b*Nprof+d_indB[i]] );
+	  mB = d_LCB[b*Nprof+d_indB[i]] + d_facB[i]*d_DLCB[b*(Nprof-1)+d_indB[i]];
+	}
+	
+	// Calculate chi2 term
+	tmp = (d_d[i] - (mA[i]/mB))/d_s[i];
+	chi2 += tmp*tmp;
       }
-      
-      // Calculate chi2 term
-      tmp = (d_d[i] - (mA[i]/mB))/d_s[i];
-      chi2 += tmp*tmp;
+      //sorted_index = sorted[a*Nloc+b];
+      //chi2_all[sorted_index] = chi2;
+      chi2_all[a*Nloc+b] = chi2;
     }
-    chi2_all[a*Nloc+b] = chi2;
-
+    
     __syncthreads();
   }
 

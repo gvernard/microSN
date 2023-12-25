@@ -30,6 +30,21 @@ public:
 };
 
 
+class Chi2SortBins {
+public:
+  int Nloc;
+  int Nbins;
+  unsigned int* sorted_ind;
+  unsigned int* d_sorted_ind;
+  unsigned int* upper_ind;
+  unsigned int* n_per_bin;
+  
+  Chi2SortBins(int Nloc,int Nbins);
+  Chi2SortBins(const Chi2SortBins& other); // The copy constructor is not expected to be used
+  ~Chi2SortBins();
+};
+
+
 class SimLC {
 public:
   int Nloc;

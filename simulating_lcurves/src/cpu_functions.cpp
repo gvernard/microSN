@@ -1,6 +1,9 @@
 #include <cmath>
 #include <vector>
 #include <iostream>
+#include <numeric>      // std::iota
+#include <algorithm>    // std::sort, std::stable_sort
+#include <cstring>
 
 #include "cpu_functions.hpp"
 
@@ -169,6 +172,34 @@ Chi2Vars setup_chi2_calculation(std::vector<double> M,std::vector<double> V,doub
 */
 
 
+void sort_chi2_by_z_CPU(int Nloc,SimLC* LCA,SimLC* LCB,Chi2* chi2){
+  
+  double* z = (double*) malloc(Nloc*Nloc*sizeof(double));
+  for(int a=0;a<Nloc;a++){
+    for(int b=0;b<Nloc;b++){
+      z[a*Nloc+b] = LCA->LC[a*LCA->Nprof]/LCB->LC[b*LCB->Nprof];
+    }
+  }
+
+      
+  std::vector<unsigned int> idx(Nloc*Nloc);
+  std::iota(idx.begin(), idx.end(), 0);
+  std::stable_sort(idx.begin(), idx.end(), [&z](size_t i1, size_t i2) {return z[i1] < z[i2];});
+  
+  double* tmp = (double*) malloc(Nloc*Nloc*sizeof(double));
+  std::memcpy(tmp,chi2->values,Nloc*Nloc*sizeof(double));
+  double* tmp_z = (double*) malloc(Nloc*Nloc*sizeof(double));
+  std::memcpy(tmp_z,z,Nloc*Nloc*sizeof(double));
+  for(int i=0;i<Nloc*Nloc;i++){
+    chi2->values[i] = tmp[idx[i]];
+    z[i] = tmp_z[idx[i]];
+  }
+
+  free(tmp);
+  free(tmp_z);
+  free(z);
+}
+
 
 
 void calculate_chi2_CPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB){
@@ -184,13 +215,13 @@ void calculate_chi2_CPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB){
 	if( chi2_vars->indA[i] == -1 ){
 	  mA = 1;
 	} else {
-	  mA = LCA->LC[a*Nprof+chi2_vars->indA[i]] + chi2_vars->facA[i]*LCA->DLC[a*Nprof+chi2_vars->indA[i]];
+	  mA = LCA->LC[a*Nprof+chi2_vars->indA[i]] + chi2_vars->facA[i]*LCA->DLC[a*(Nprof-1)+chi2_vars->indA[i]];
 	}
 	
 	if( chi2_vars->indB[i] == -1 ){
 	  mB = 1;
 	} else {
-	  mB = LCB->LC[b*Nprof+chi2_vars->indB[i]] + chi2_vars->facB[i]*LCB->DLC[b*Nprof+chi2_vars->indB[i]];
+	  mB = LCB->LC[b*Nprof+chi2_vars->indB[i]] + chi2_vars->facB[i]*LCB->DLC[b*(Nprof-1)+chi2_vars->indB[i]];
 	}
 	
 	tmp = (chi2_vars->new_d[i] - (mA/mB))/chi2_vars->new_s[i];

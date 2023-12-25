@@ -10,10 +10,12 @@
 
 void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::string shape,int Nloc,int* sample_loc_x,int* sample_loc_y,SimLC* LC);
 
-void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,unsigned int* sorted,unsigned int* upper,unsigned int* n);
+void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sorted);
 
-void calculate_chi2_GPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB);
+void calculate_chi2_GPU(Chi2Vars* chi2_vars,Chi2* chi2,Chi2SortBins* sorted,SimLC* LCA,SimLC* LCB);
 
-void test_chi2(Chi2* chi2,int offset,int N);
+void sort_chi2_by_z_GPU(int Nloc,Chi2SortBins* sort_struct,Chi2* chi2);
+
+void test_chi2(Chi2* chi2,int offset,int N,int Nloc);
 
 #endif /* GENERIC_GPU_HPP */

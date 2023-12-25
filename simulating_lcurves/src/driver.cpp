@@ -66,7 +66,6 @@ int main(int argc,char* argv[]){
   SimLC LCB(Nloc,Nprof);
   Chi2 chi2(Nloc);
 
-
   
   // Define parameters and perform checks for chi2 and likelihood code 
   int Nd = input["data"][0]["d"].size();
@@ -104,6 +103,8 @@ int main(int argc,char* argv[]){
   int Nbins_ratio  = input["mpds"]["ratio"]["Nbins"].asInt();
   double min_ratio = input["mpds"]["ratio"]["min"].asDouble();
   double max_ratio = input["mpds"]["ratio"]["max"].asDouble();
+
+  Chi2SortBins sort_struct(Nloc,Nbins_ratio);
   //******************************************************************************************
 
 
@@ -128,6 +129,10 @@ int main(int argc,char* argv[]){
   
   // Call the LC simulator code for second map
   expanding_source(&mapB,sizes,shape,Nloc,x,y,&LCB);
+
+  // Need to transfer the light curves to the CPU for comparisons
+  LCA.transfer_to_CPU();
+  LCB.transfer_to_CPU();
   //******************************************************************************************
 
 
@@ -136,7 +141,6 @@ int main(int argc,char* argv[]){
   std::cout << "MPDS" << std::endl;
   std::cout << std::string(100, '*') << std::endl;
 
-  // Calculate the probability distribution of magnification ratios z  
   Mpd binned_mpd_A = mapA.getBinnedMpd(Nbins_mpd,min_mpd,max_mpd);
   Mpd binned_mpd_B = mapB.getBinnedMpd(Nbins_mpd,min_mpd,max_mpd);
   binned_mpd_A.normalize();
@@ -144,20 +148,16 @@ int main(int argc,char* argv[]){
 
   Mpd ratio(Nbins_ratio,min_ratio,max_ratio,"log");
   binned_mpd_A.divide_by(&binned_mpd_B,&ratio);
-  //std::cout << ratio.bins[0] << "   " << ratio.bins[Nbins_ratio-1] << std::endl;
   
   binned_mpd_A.writeMpd("mpd_A.dat");
   binned_mpd_B.writeMpd("mpd_B.dat");
   ratio.writeMpd("mpd_R.dat");
 
-  unsigned int* sorted    = (unsigned int*) malloc(Nloc*Nloc*sizeof(unsigned int));
-  unsigned int* upper_ind = (unsigned int*) malloc(Nbins_ratio*sizeof(unsigned int));
-  unsigned int* n_per_bin = (unsigned int*) malloc(Nbins_ratio*sizeof(unsigned int));
-  setup_integral(&LCA,&LCB,&ratio,sorted,upper_ind,n_per_bin);
+  setup_integral(&LCA,&LCB,&ratio,&sort_struct);
   
-  std::cout << "Integral A: " << binned_mpd_A.integrate() << std::endl;
-  std::cout << "Integral B: " << binned_mpd_B.integrate() << std::endl;
-  std::cout << "Integral ratio: " << ratio.integrate() << std::endl;
+  // std::cout << "Integral A: " << binned_mpd_A.integrate() << std::endl;
+  // std::cout << "Integral B: " << binned_mpd_B.integrate() << std::endl;
+  // std::cout << "Integral ratio: " << ratio.integrate() << std::endl;
   //******************************************************************************************
 
 
@@ -172,38 +172,41 @@ int main(int argc,char* argv[]){
   std::vector<double> V{1}; // in 10^5 km/s                           SAMPLED
 
   Chi2Vars chi2_vars = setup_chi2_calculation(M,V,Dfac,Nd,d,t,s,Nprof,sizes.data());
-  calculate_chi2_GPU(&chi2_vars,&chi2,&LCA,&LCB);
+  calculate_chi2_GPU(&chi2_vars,&chi2,&sort_struct,&LCA,&LCB);
+  sort_chi2_by_z_GPU(Nloc,&sort_struct,&chi2);
 
 
-  // Calcuate the chi2 on the CPU too and compare values
-  LCA.transfer_to_CPU(); // Needed to calculate the chi2 on the CPU
-  LCB.transfer_to_CPU(); // Needed to calculate the chi2 on the CPU
+  // Calculate the chi2 on the CPU too and compare values
   calculate_chi2_CPU(&chi2_vars,&chi2,&LCA,&LCB);
 
-  int test_offset = 23*Nloc+24;
+  sort_chi2_by_z_CPU(Nloc,&LCA,&LCB,&chi2);
+  
+  //int test_offset = 123*Nloc+24;
+  int test_offset = 0;
   int test_size = 10;
-  test_chi2(&chi2,test_offset,test_size);
+  test_chi2(&chi2,test_offset,test_size,Nloc);
 
 
-  //******************************************************************************************
  
-  // Sort and bin chi2 values with respect to z
   
   // Calculate integral using the binned chi2 and p(z)
 
-  
+
   // OUTPUT
-  /*
-  FILE* fh = fopen("lcurves.dat","w");
+  FILE* fh  = fopen("lcurvesA.dat","w");
+  FILE* fh2 = fopen("lcurvesB.dat","w");
   for(int i=0;i<Nloc;i++){
     for(int j=0;j<Nprof;j++){
-      fprintf(fh," %f",LCA[i*Nprof+j]);
+      fprintf(fh," %f",LCA.LC[i*Nprof+j]);
+      fprintf(fh2," %f",LCB.LC[i*Nprof+j]);
     }
     fprintf(fh,"\n");
+    fprintf(fh2,"\n");
   }
   fclose(fh);
-  */
-  //******************************************************************************************
+  fclose(fh2);
+
+
 
 
   //============================================================================================================
@@ -213,9 +216,6 @@ int main(int argc,char* argv[]){
 
 
 
-  free(sorted);
-  free(upper_ind);
-  free(n_per_bin);
   //============================================================================================================
   // END: SAMPLE MAP PAIR
 
