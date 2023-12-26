@@ -28,6 +28,8 @@ int main(int argc,char* argv[]){
   fin >> input;
   fin.close();
 
+  //bool compare_cpu = true;
+  bool compare_cpu = false;
 
   // Define parameters and perform checks for LC simulator code 
   int Nprof = input["sizes"].size();
@@ -131,8 +133,10 @@ int main(int argc,char* argv[]){
   expanding_source(&mapB,sizes,shape,Nloc,x,y,&LCB);
 
   // Need to transfer the light curves to the CPU for comparisons
-  LCA.transfer_to_CPU();
-  LCB.transfer_to_CPU();
+  if( compare_cpu ){
+    LCA.transfer_to_CPU();
+    LCB.transfer_to_CPU();
+  }
   //******************************************************************************************
 
 
@@ -173,49 +177,104 @@ int main(int argc,char* argv[]){
 
   Chi2Vars chi2_vars = setup_chi2_calculation(M,V,Dfac,Nd,d,t,s,Nprof,sizes.data());
   calculate_chi2_GPU(&chi2_vars,&chi2,&sort_struct,&LCA,&LCB);
-  sort_chi2_by_z_GPU(Nloc,&sort_struct,&chi2);
+  //  sort_chi2_by_z_GPU(Nloc,&sort_struct,&chi2);
 
 
-  // Calculate the chi2 on the CPU too and compare values
-  calculate_chi2_CPU(&chi2_vars,&chi2,&LCA,&LCB);
-
-  sort_chi2_by_z_CPU(Nloc,&LCA,&LCB,&chi2);
-  
-  //int test_offset = 123*Nloc+24;
-  int test_offset = 0;
-  int test_size = 10;
-  test_chi2(&chi2,test_offset,test_size,Nloc);
-
+  if( compare_cpu ){
+    // Calculate the chi2 on the CPU too and compare values
+    calculate_chi2_CPU(&chi2_vars,&chi2,&LCA,&LCB);
+    
+    sort_chi2_by_z_CPU(Nloc,&LCA,&LCB,&chi2);
+    
+    //int test_offset = 123*Nloc+24;
+    int test_offset = Nloc*Nloc-10;
+    int test_size = 10;
+    test_chi2(&chi2,test_offset,test_size,Nloc);
+  }
 
  
   
   // Calculate integral using the binned chi2 and p(z)
+  Mpd dum_chi2_GPU = ratio;
+  Mpd dum_exp_GPU  = ratio;
+  bin_chi2_GPU(Nloc,dum_chi2_GPU.counts,dum_exp_GPU.counts,&sort_struct,&chi2);
 
-
-  // OUTPUT
-  FILE* fh  = fopen("lcurvesA.dat","w");
-  FILE* fh2 = fopen("lcurvesB.dat","w");
-  for(int i=0;i<Nloc;i++){
-    for(int j=0;j<Nprof;j++){
-      fprintf(fh," %f",LCA.LC[i*Nprof+j]);
-      fprintf(fh2," %f",LCB.LC[i*Nprof+j]);
-    }
-    fprintf(fh,"\n");
-    fprintf(fh2,"\n");
+  double integral_gpu = 0.0;
+  for(int i=1;i<ratio.Nbins;i++){
+    integral_gpu += (dum_exp_GPU.counts[i-1]*ratio.counts[i-1] + dum_exp_GPU.counts[i]*ratio.counts[i])*(ratio.bins[i] - ratio.bins[i-1])/2.0;
   }
-  fclose(fh);
-  fclose(fh2);
 
 
+  
+  if( compare_cpu ){
+    chi2.transfer_to_CPU();
+
+    bool flag = false;
+    for(int i=0;i<Nloc*Nloc;i++){
+      if( chi2.values[i] <= 0.0 ){
+	std::cout << i << " " << chi2.values[i] << std::endl;
+	flag = true;
+      }
+    }
+    if( flag ){
+      std::cout << "ZERO OR NEGATIVE CHI2 LOCATED!!!" << std::endl;
+    } else {
+      std::cout << "All chi2 values are positive and non-zero!!!" << std::endl;
+    }
+    
+    Mpd binned_chi2_CPU = ratio;
+    Mpd binned_exp_CPU  = ratio;
+    bin_chi2_CPU(Nloc,binned_chi2_CPU.counts,binned_exp_CPU.counts,&sort_struct,&chi2);
+    
+    double integral_cpu  = 0.0;
+    for(int i=1;i<ratio.Nbins;i++){
+      integral_cpu += (binned_exp_CPU.counts[i-1]*ratio.counts[i-1] + binned_exp_CPU.counts[i]*ratio.counts[i])*(ratio.bins[i] - ratio.bins[i-1])/2.0;
+    }
 
 
+    // for(int i=ratio.Nbins-20;i<ratio.Nbins;i++){
+    //   printf("%10.7f %10.7f %10.7f %10d %10d %10.5f\n",binned_exp_CPU.bins[i],binned_exp_CPU.counts[i],binned_chi2_CPU.counts[i],sort_struct.n_per_bin[i],sort_struct.lower_ind[i],ratio.counts[i]);
+    // }
+    
+    // printf("%10s %10s %10s %10s\n","GPU","CPU","diff","p(z)");
+    // for(int i=0;i<ratio.Nbins;i++){
+    //   double diff = dum_exp_GPU.counts[i] - binned_chi2_CPU.counts[i];
+    //   printf("%10.7f %10.7f %10.7f %10.5f\n",dum_exp_GPU.counts[i],binned_chi2_CPU.counts[i],diff,ratio.counts[i]);
+    // }
+    std::cout << integral_gpu << " " << integral_cpu << std::endl;
+  } else {
+    std::cout << integral_gpu << std::endl;
+  }
+  
   //============================================================================================================
   // END: SAMPLE MASS AND VELOCITY
 
   
 
 
+  if( compare_cpu ){
+    // OUTPUT
+    FILE* fh  = fopen("lcurvesA.dat","w");
+    FILE* fh2 = fopen("lcurvesB.dat","w");
+    for(int i=0;i<Nloc;i++){
+      for(int j=0;j<Nprof;j++){
+	fprintf(fh," %f",LCA.LC[i*Nprof+j]);
+	fprintf(fh2," %f",LCB.LC[i*Nprof+j]);
+      }
+      fprintf(fh,"\n");
+      fprintf(fh2,"\n");
+    }
+    fclose(fh);
+    fclose(fh2);
+  }
 
+  dum_exp_GPU.writeMpd("binned_exp.dat");
+  // for(int i=0;i<ratio.Nbins;i++){
+  //   printf("%10.7f %10.7f %10.7f %10d %10.5f\n",dum_exp_GPU.bins[i],dum_exp_GPU.counts[i],dum_chi2_GPU.counts[i],sort_struct.n_per_bin[i],ratio.counts[i]);
+  // }
+
+
+  
   //============================================================================================================
   // END: SAMPLE MAP PAIR
 

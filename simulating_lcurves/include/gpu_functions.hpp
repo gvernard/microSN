@@ -18,4 +18,6 @@ void sort_chi2_by_z_GPU(int Nloc,Chi2SortBins* sort_struct,Chi2* chi2);
 
 void test_chi2(Chi2* chi2,int offset,int N,int Nloc);
 
+void bin_chi2_GPU(int Nloc,double* binned_chi2,double* binned_exp,Chi2SortBins* sort_struct,Chi2* chi2);
+
 #endif /* GENERIC_GPU_HPP */

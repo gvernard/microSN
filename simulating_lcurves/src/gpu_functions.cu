@@ -29,10 +29,14 @@ __constant__ double d_facB[50];
 __constant__ int d_indA[50];
 __constant__ int d_indB[50];
 
+__constant__ unsigned int d_lower_ind[5120];
+__constant__ unsigned int d_n_per_bin[5120];
+
 __global__ void kernel_chi2(int loop_ind,int N,int Nprof,double* d_LCA,double* d_LCB,double* d_DLCA,double* d_DLCB,int Nloc,double* chi2_all,unsigned int* sorted);
 __global__ void kernel_z(int k,int Nloc,int Nprof,double* d_LCA,double* d_LCB,double* d_z);
 __global__ void kernel_multiplyFFTs(cufftDoubleComplex* Fmap,cufftDoubleComplex* Fkernel,double norm);
 __global__ void kernel_sample(cufftDoubleReal* convmap,double* d_LC,double* d_DLC,int k,int Nprof,int* loc_x,int* loc_y,int Nx,int Nloc);
+__global__ void kernel_bin_chi2(int Nloc,int Nbins,double* d_binned_chi2,double* d_binned_exp,double* chi2);
 void myfft2d_r2c(cufftHandle* plan, cufftDoubleReal* data, cufftDoubleComplex* Fdata);
 void myfft2d_c2r(cufftHandle* plan, cufftDoubleComplex* Fdata, cufftDoubleReal* data);
 
@@ -255,6 +259,28 @@ void calculate_chi2_GPU(Chi2Vars* chi2_vars,Chi2* chi2,Chi2SortBins* sort_struct
 }
 
 
+void bin_chi2_GPU(int Nloc,double* binned_chi2,double* binned_exp,Chi2SortBins* sort_struct,Chi2* chi2){
+  int Nbins = sort_struct->Nbins;
+  
+  // Transfer the fixed arrays to the GPU
+  cudaMemcpyToSymbol(d_lower_ind,sort_struct->lower_ind,Nbins*sizeof(unsigned int),0,cudaMemcpyHostToDevice);
+  cudaMemcpyToSymbol(d_n_per_bin,sort_struct->n_per_bin,Nbins*sizeof(unsigned int),0,cudaMemcpyHostToDevice);
+  double* d_binned_chi2;
+  cudaMalloc((void**) &d_binned_chi2,Nbins*sizeof(double));
+  double* d_binned_exp;
+  cudaMalloc((void**) &d_binned_exp,Nbins*sizeof(double));
+  
+  int Nblocks = (int) ceil((double) Nloc/1024.0);
+  kernel_bin_chi2<<<Nblocks,1024>>>(Nloc,Nbins,d_binned_chi2,d_binned_exp,chi2->d_values);
+  cudaDeviceSynchronize();
+
+  cudaMemcpy(binned_chi2,d_binned_chi2,Nbins*sizeof(double),cudaMemcpyDeviceToHost);  
+  cudaMemcpy(binned_exp,d_binned_exp,Nbins*sizeof(double),cudaMemcpyDeviceToHost);  
+  cudaFree(d_binned_chi2);
+  cudaFree(d_binned_exp);
+}
+
+
 void test_chi2(Chi2* chi2,int offset,int N,int Nloc){
   
   // Fetch some GPU chi2 terms and print them
@@ -266,21 +292,23 @@ void test_chi2(Chi2* chi2,int offset,int N,int Nloc){
   printf("%10s %10s %10s %10s\n","index","GPU","CPU","diff");
   for(int i=0;i<N;i++){
     double diff = test_chi2[offset+i] - chi2->values[offset+i];
-    printf("%d %10.3f %10.3f %10.3f\n",offset+i,test_chi2[offset+i],chi2->values[offset+i],diff);
+    printf("%10d %10.3f %10.3f %10.3f\n",offset+i,test_chi2[offset+i],chi2->values[offset+i],diff);
   }
 
   double tol = 1.e-8;
-  int counter_above = 0;
-  int counter_below = 0;
+  int ca = 0; // counter above threshold
+  int cb = 0; // counter below threshold
   for(int i=0;i<Nloc*Nloc;i++){
     double diff = test_chi2[i] - chi2->values[i];
     if( abs(diff) > tol ){
-      counter_above++;
+      ca++;
     } else if( abs(diff) > 0.0 ){
-      counter_below++;
+      cb++;
     }
   }
-  printf("Diff. above / below tolerance (%e): %d / %d\n",tol,counter_above,counter_below);
+  double pc_a = (double) 100.0*ca/(Nloc*Nloc); // percentage above threshold
+  double pc_b = (double) 100.0*cb/(Nloc*Nloc); // percentage below threshold
+  printf("Diff. above / below tolerance (%e) out of %d chi2 values: %d (%6.2f%%) / %d (%6.2f%%)\n",tol,Nloc*Nloc,ca,pc_a,cb,pc_b);
   
   free(test_chi2);
 }
@@ -305,10 +333,17 @@ void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sort_stru
 
 
   // ############################################## Sort z and get indices ####################################################
+  // This part can be probably achieved by using thrust::permutation iterators to avoid double sorting
+  thrust::device_vector<int> d_tmp(Nloc*Nloc);
+  thrust::sequence(d_tmp.begin(),d_tmp.end());
+  thrust::device_ptr<double> d_ptr = thrust::device_pointer_cast(d_z);
+  thrust::stable_sort_by_key(d_ptr,d_ptr+Nloc*Nloc,d_tmp.begin());
+
   thrust::device_ptr<unsigned int> ptr_sorted = thrust::device_pointer_cast(sort_struct->d_sorted_ind);
   thrust::sequence(ptr_sorted,ptr_sorted+Nloc*Nloc);
-  thrust::device_ptr<double> d_ptr = thrust::device_pointer_cast(d_z);
-  thrust::stable_sort_by_key(d_ptr,d_ptr + Nloc*Nloc,ptr_sorted);
+  thrust::stable_sort_by_key(d_tmp.begin(),d_tmp.end(),ptr_sorted);
+  d_tmp.clear();
+  d_tmp.shrink_to_fit();
   // ##########################################################################################################################
 
   
@@ -319,12 +354,18 @@ void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sort_stru
   thrust::device_vector<unsigned int> d_upper(Nbins);
   thrust::upper_bound(d_ptr,d_ptr+Nloc*Nloc,d_bins.begin(),d_bins.end(),d_upper.begin());
   unsigned int* ptr_d_upper = thrust::raw_pointer_cast(&d_upper[0]);
-  cudaMemcpy(sort_struct->upper_ind,ptr_d_upper,Nbins*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  cudaMemcpy(sort_struct->lower_ind+1,ptr_d_upper,(Nbins-1)*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  sort_struct->lower_ind[0] = 0;
 
+  
   thrust::device_vector<unsigned int> d_n(Nbins);
   thrust::adjacent_difference(d_upper.begin(),d_upper.end(),d_n.begin());
   unsigned int* ptr_d_n = thrust::raw_pointer_cast(&d_n[0]);
   cudaMemcpy(sort_struct->n_per_bin,ptr_d_n,Nbins*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+
+  // for(int i=0;i<Nbins;i++){
+  //   printf("Bin %d:  %f >   %d  N=%d\n",i,mpd_ratio->bins[i],sort_struct->upper_ind[i],sort_struct->n_per_bin[i]);
+  // }
   // ##########################################################################################################################
 
 
@@ -450,13 +491,39 @@ __global__ void kernel_chi2(int loop_ind,int N,int Nprof,double* d_LCA,double* d
 	tmp = (d_d[i] - (mA[i]/mB))/d_s[i];
 	chi2 += tmp*tmp;
       }
-      //sorted_index = sorted[a*Nloc+b];
-      //chi2_all[sorted_index] = chi2;
-      chi2_all[a*Nloc+b] = chi2;
+      sorted_index = sorted[a*Nloc+b];
+      chi2_all[sorted_index] = chi2;
+      //chi2_all[a*Nloc+b] = chi2;
     }
     
     __syncthreads();
   }
 
+}
+
+
+__global__ void kernel_bin_chi2(int Nloc,int Nbins,double* d_binned_chi2,double* d_binned_exp,double* chi2){
+  int Nt  = blockDim.x; // equal to 1024
+  int tid = threadIdx.x;
+  int bid = blockIdx.x;
+  int id = bid*Nt+tid;
+  double sum_exp,sum_chi;
+
+  if( id<Nbins ){
+    if( d_n_per_bin[id] > 0 ){
+      sum_exp = 0.0;
+      sum_chi = 0.0;
+      for(int i=0;i<d_n_per_bin[id];i++){
+	sum_exp += exp(-0.5*chi2[d_lower_ind[id]+i]);
+	sum_chi += chi2[d_lower_ind[id]+i];
+      }
+      d_binned_exp[id]  = sum_exp/d_n_per_bin[id];
+      d_binned_chi2[id] = sum_chi/d_n_per_bin[id];
+    } else {
+      d_binned_exp[id] = exp(-2000.0/2.0);
+      d_binned_chi2[id] = 2000.0;
+    }
+  }
+  
 }
 

@@ -234,3 +234,24 @@ void calculate_chi2_CPU(Chi2Vars* chi2_vars,Chi2* chi2,SimLC* LCA,SimLC* LCB){
 }
 
 
+void bin_chi2_CPU(int Nloc,double* binned_chi2,double* binned_exp,Chi2SortBins* sort_struct,Chi2* chi2){
+  double sum_exp,sum_chi;
+  
+  for(int i=0;i<sort_struct->Nbins;i++){
+    sum_chi = 0.0;
+    sum_exp = 0.0;
+
+    if( sort_struct->n_per_bin[i] > 0 ){      
+      for(int k=0;k<sort_struct->n_per_bin[i];k++){
+	sum_exp += exp(-0.5*chi2->values[sort_struct->lower_ind[i]+k]);
+	sum_chi += chi2->values[sort_struct->lower_ind[i]+k];
+      }
+      sum_chi /= sort_struct->n_per_bin[i];
+      sum_exp /= sort_struct->n_per_bin[i];
+    }
+    binned_chi2[i] = sum_chi;
+    binned_exp[i]  = sum_exp;
+    
+  }
+}
+

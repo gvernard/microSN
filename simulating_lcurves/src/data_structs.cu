@@ -62,7 +62,7 @@ void Chi2::transfer_to_CPU(){
 
 Chi2SortBins::Chi2SortBins(int Nloc,int Nbins): Nloc(Nloc),Nbins(Nbins) {
   this->sorted_ind = (unsigned int*) malloc(this->Nloc*this->Nloc*sizeof(unsigned int));
-  this->upper_ind  = (unsigned int*) malloc(this->Nbins*sizeof(unsigned int));
+  this->lower_ind  = (unsigned int*) malloc(this->Nbins*sizeof(unsigned int));
   this->n_per_bin  = (unsigned int*) malloc(this->Nbins*sizeof(unsigned int));
   cudaMalloc(&this->d_sorted_ind,this->Nloc*this->Nloc*sizeof(double));
   cudaDeviceSynchronize();
@@ -72,7 +72,7 @@ Chi2SortBins::Chi2SortBins(int Nloc,int Nbins): Nloc(Nloc),Nbins(Nbins) {
 Chi2SortBins::Chi2SortBins(const Chi2SortBins& other): Chi2SortBins(other.Nloc,other.Nbins) {
   // The copy constructor is not expected to be used
   std::memcpy(this->sorted_ind,other.sorted_ind,this->Nloc*this->Nloc*sizeof(unsigned int));
-  std::memcpy(this->upper_ind,other.upper_ind,this->Nbins*sizeof(unsigned int));
+  std::memcpy(this->lower_ind,other.lower_ind,this->Nbins*sizeof(unsigned int));
   std::memcpy(this->n_per_bin,other.n_per_bin,this->Nbins*sizeof(unsigned int));
   cudaMemcpy(this->d_sorted_ind,other.d_sorted_ind,this->Nloc*this->Nloc*sizeof(unsigned int),cudaMemcpyDeviceToDevice);
   cudaDeviceSynchronize();
@@ -80,7 +80,7 @@ Chi2SortBins::Chi2SortBins(const Chi2SortBins& other): Chi2SortBins(other.Nloc,o
 
 Chi2SortBins::~Chi2SortBins(){
   free(sorted_ind);
-  free(upper_ind);
+  free(lower_ind);
   free(n_per_bin);
   cudaFree(d_sorted_ind);
 }

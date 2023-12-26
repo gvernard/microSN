@@ -36,7 +36,7 @@ public:
   int Nbins;
   unsigned int* sorted_ind;
   unsigned int* d_sorted_ind;
-  unsigned int* upper_ind;
+  unsigned int* lower_ind;
   unsigned int* n_per_bin;
   
   Chi2SortBins(int Nloc,int Nbins);
