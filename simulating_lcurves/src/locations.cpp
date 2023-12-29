@@ -1,4 +1,5 @@
 #include <cmath>
+#include <random>
 
 #include "locations.hpp"
 
@@ -13,6 +14,14 @@ void locations_on_grid(int Nside,int Nmap,int Noff,int* x,int* y){
 }
 
 
-void locations_random(int Nloc,int* x,int* y){
-
+void locations_random(int Nloc,int Nmap,int Noff,int seed,int* x,int* y){
+  int Neff = Nmap - 2*Noff;
+  std::mt19937 gen(seed);
+  std::uniform_int_distribution<unsigned> distrib(0,Neff);
+  for(int i=0;i<Nloc;i++){
+    x[i] = Noff + distrib(gen);
+    y[i] = Noff + distrib(gen);
+  }
 }
+
+

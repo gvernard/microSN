@@ -24,7 +24,7 @@ int main(int argc,char* argv[]){
   // Read the main projection parameters
   Json::Value input;
   std::ifstream fin;
-  fin.open("input.json",std::ifstream::in);
+  fin.open(argv[1],std::ifstream::in);
   fin >> input;
   fin.close();
 
@@ -57,7 +57,11 @@ int main(int argc,char* argv[]){
     Nloc = input["locations"]["Nloc"].asInt();
     x = (int*) malloc(Nloc*sizeof(int));
     y = (int*) malloc(Nloc*sizeof(int));
-    locations_random(Nloc,x,y);
+    int Nmap = input["locations"]["Nmap"].asInt();
+    double ss = input["locations"]["ss"].asDouble();
+    int Noff = (int) ceil((Nmap/ss)*sizes.back());
+    int seed = input["locations"]["seed"].asInt();
+    locations_random(Nloc,Nmap,Noff,seed,x,y);
   }
   printf("Sampling from %d locations per map (%s).\n",Nloc,locations.c_str());
   printf("Will loop %.2f times (round up) to cover all location pairs.\n",Nloc/1024.0);
@@ -269,6 +273,13 @@ int main(int argc,char* argv[]){
   }
 
   dum_exp_GPU.writeMpd("binned_exp.dat");
+
+  FILE* fh  = fopen("binned_N.dat","w");
+  for(int i=0;i<sort_struct.Nbins;i++){
+    fprintf(fh,"%11.6e %d\n",dum_exp_GPU.bins[i],sort_struct.n_per_bin[i]);
+  }
+  fclose(fh);
+  
   // for(int i=0;i<ratio.Nbins;i++){
   //   printf("%10.7f %10.7f %10.7f %10d %10.5f\n",dum_exp_GPU.bins[i],dum_exp_GPU.counts[i],dum_chi2_GPU.counts[i],sort_struct.n_per_bin[i],ratio.counts[i]);
   // }

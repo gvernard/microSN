@@ -8,10 +8,11 @@
   ],
   "shape": "gaussian",
   "locations": {
-    "type": "grid",
+    "type": "random",
     "Nmap": 10000,
     "ss": 25,
-    "Nside": 99
+    "seed": 5,
+    "Nloc": 9216
   },
   "mpds": {
     "mpd": {
@@ -20,7 +21,7 @@
       "max": 400
     },
     "ratio": {
-      "Nbins": 100,
+      "Nbins": 300,
       "min": 0.0001,
       "max": 300
     }
