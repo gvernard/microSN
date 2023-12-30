@@ -21,6 +21,11 @@ int main(int argc,char* argv[]){
   //******************************************************************************************
   //Json::Value::Members jmembers;
 
+  if( argc != 2 ){
+    std::cout << "Error: You need to provide the name of a .json file that contains all the input variables!" << std::endl;
+    return 1;
+  }
+  
   // Read the main projection parameters
   Json::Value input;
   std::ifstream fin;
@@ -180,15 +185,14 @@ int main(int argc,char* argv[]){
   std::vector<double> V{1}; // in 10^5 km/s                           SAMPLED
 
   Chi2Vars chi2_vars = setup_chi2_calculation(M,V,Dfac,Nd,d,t,s,Nprof,sizes.data());
-  calculate_chi2_GPU(&chi2_vars,&chi2,&sort_struct,&LCA,&LCB);
-  //  sort_chi2_by_z_GPU(Nloc,&sort_struct,&chi2);
+  calculate_chi2_GPU(&chi2_vars,chi2.d_values,&sort_struct,&LCA,&LCB);
 
 
   if( compare_cpu ){
     // Calculate the chi2 on the CPU too and compare values
-    calculate_chi2_CPU(&chi2_vars,&chi2,&LCA,&LCB);
+    calculate_chi2_CPU(&chi2_vars,chi2.values,&LCA,&LCB);
     
-    sort_chi2_by_z_CPU(Nloc,&LCA,&LCB,&chi2);
+    sort_chi2_by_z_CPU(Nloc,&LCA,&LCB,chi2.values);
     
     //int test_offset = 123*Nloc+24;
     int test_offset = Nloc*Nloc-10;
@@ -201,7 +205,7 @@ int main(int argc,char* argv[]){
   // Calculate integral using the binned chi2 and p(z)
   Mpd dum_chi2_GPU = ratio;
   Mpd dum_exp_GPU  = ratio;
-  bin_chi2_GPU(Nloc,dum_chi2_GPU.counts,dum_exp_GPU.counts,&sort_struct,&chi2);
+  bin_chi2_GPU(dum_chi2_GPU.counts,dum_exp_GPU.counts,&sort_struct,chi2.d_values);
 
   double integral_gpu = 0.0;
   for(int i=1;i<ratio.Nbins;i++){
@@ -228,7 +232,7 @@ int main(int argc,char* argv[]){
     
     Mpd binned_chi2_CPU = ratio;
     Mpd binned_exp_CPU  = ratio;
-    bin_chi2_CPU(Nloc,binned_chi2_CPU.counts,binned_exp_CPU.counts,&sort_struct,&chi2);
+    bin_chi2_CPU(binned_chi2_CPU.counts,binned_exp_CPU.counts,&sort_struct,chi2.values);
     
     double integral_cpu  = 0.0;
     for(int i=1;i<ratio.Nbins;i++){
