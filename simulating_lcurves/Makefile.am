@@ -19,7 +19,8 @@ libcommon_la_SOURCES = \
 	src/profile.cpp \
 	src/image.cpp \
 	src/cpu_functions.cpp \
-	src/locations.cpp
+	src/locations.cpp \
+	src/integration.cpp
 libcommon_la_CXXFLAGS = -std=c++17 -fPIC -g -frounding-math
 libcommon_la_CPPFLAGS = -Iinclude
 libcommon_la_LIBADD = -lmagmap

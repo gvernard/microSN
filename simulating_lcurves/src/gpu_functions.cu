@@ -228,6 +228,101 @@ void expanding_source(MagnificationMap* map,std::vector<double> sizes,std::strin
 
 /*
 SUMMARY:
+
+INPUT:
+\param M -- Vector of masses [in units of solar mass].
+
+FUNCTION:
+
+OUTPUT:
+*/
+void test_chi2(Chi2* chi2,int offset,int N){
+  int Nloc = chi2->Nloc;
+  
+  // Fetch GPU chi2 terms
+  double* test_chi2 = (double*) malloc(Nloc*Nloc*sizeof(double));
+  cudaMemcpy(test_chi2,chi2->d_values,Nloc*Nloc*sizeof(double),cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
+
+  // Print GPU and CPU chi2 terms and their difference
+  printf("%10s %10s %10s %10s\n","index","GPU","CPU","diff");
+  for(int i=0;i<N;i++){
+    double diff = test_chi2[offset+i] - chi2->values[offset+i];
+    printf("%10d %10.3f %10.3f %10.3f\n",offset+i,test_chi2[offset+i],chi2->values[offset+i],diff);
+  }
+
+  double tol = 1.e-8;
+  int ca = 0; // counter above threshold
+  int cb = 0; // counter below threshold
+  for(int i=0;i<Nloc*Nloc;i++){
+    double diff = test_chi2[i] - chi2->values[i];
+    if( abs(diff) > tol ){
+      ca++;
+    } else if( abs(diff) > 0.0 ){
+      cb++;
+    }
+  }
+  double pc_a = (double) 100.0*ca/(Nloc*Nloc); // percentage above threshold
+  double pc_b = (double) 100.0*cb/(Nloc*Nloc); // percentage below threshold
+  printf("Diff. above / below tolerance (%e) out of %d chi2 values: %d (%6.2f%%) / %d (%6.2f%%)\n",tol,Nloc*Nloc,ca,pc_a,cb,pc_b);
+  
+  free(test_chi2);
+}
+
+
+
+/*
+SUMMARY:
+
+INPUT:
+\param M -- Vector of masses [in units of solar mass].
+
+FUNCTION:
+
+OUTPUT:
+*/
+void test_setup_integral(Chi2SortBins* sort_gpu,Chi2SortBins* sort_cpu,int offset,int N){
+  int Nloc = sort_gpu->Nloc;
+  
+  // Fetch GPU sorted indices
+  unsigned int* test_ind = (unsigned int*) malloc(Nloc*Nloc*sizeof(unsigned int));
+  cudaMemcpy(test_ind,sort_gpu->d_sorted_ind,Nloc*Nloc*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
+
+  // Print GPU and CPU chi2 terms and their difference
+  printf("%10s %10s %10s %10s\n","index","GPU","CPU","diff");
+  for(int i=0;i<N;i++){
+    unsigned int diff = test_ind[offset+i] - sort_cpu->sorted_ind[offset+i];
+    printf("%10d %10d %10d %10d\n",offset+i,test_ind[offset+i],sort_cpu->sorted_ind[offset+i],diff);
+  }
+
+  double tol = 1;
+  int ca = 0; // counter above threshold
+  for(int i=0;i<Nloc*Nloc;i++){
+    unsigned int diff = test_ind[i] - sort_cpu->sorted_ind[i];
+    if( diff > tol ){
+      ca++;
+    }
+  }
+  double pc_a = (double) 100.0*ca/(Nloc*Nloc); // percentage above threshold
+  printf("Diff. above tolerance (%e) out of %d indices: %d (%6.2f%%)\n",tol,Nloc*Nloc,ca,pc_a);
+
+  free(test_ind);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+SUMMARY:
 Sets the sorted indices of the Nloc*Nloc pairs according to their z, the lower_ind and n_per_bin arrays for the binned z and chi2, and bins z. 
 
 INPUT:
@@ -253,7 +348,7 @@ We could probably use a smarter approach to find the correct mapping of thread I
 We need to check whether the fact that the memory look-up for the sorted indices leads to a performance penalty due to non-local memory access by the kernel_chi2 threads.
 We can probably improve the way the lower indices are calculated for a slightly cleaner code.
 */
-void setup_integral(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sort_struct){
+void setup_integral_GPU(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sort_struct){
   int Nloc = LCA->Nloc;
   int Nprof = LCA->Nprof;
   
@@ -405,51 +500,6 @@ void bin_chi2_GPU(double* binned_chi2,double* binned_exp,Chi2SortBins* sort_stru
   cudaMemcpy(binned_exp,d_binned_exp,Nbins*sizeof(double),cudaMemcpyDeviceToHost);  
   cudaFree(d_binned_chi2);
   cudaFree(d_binned_exp);
-}
-
-
-
-
-/*
-SUMMARY:
-
-INPUT:
-\param M -- Vector of masses [in units of solar mass].
-
-FUNCTION:
-
-OUTPUT:
-*/
-void test_chi2(Chi2* chi2,int offset,int N,int Nloc){
-  
-  // Fetch some GPU chi2 terms and print them
-  double* test_chi2 = (double*) malloc(Nloc*Nloc*sizeof(double));
-  cudaMemcpy(test_chi2,chi2->d_values,Nloc*Nloc*sizeof(double),cudaMemcpyDeviceToHost);
-  cudaDeviceSynchronize();
-
-  // Print GPU and CPU chi2 terms and their difference
-  printf("%10s %10s %10s %10s\n","index","GPU","CPU","diff");
-  for(int i=0;i<N;i++){
-    double diff = test_chi2[offset+i] - chi2->values[offset+i];
-    printf("%10d %10.3f %10.3f %10.3f\n",offset+i,test_chi2[offset+i],chi2->values[offset+i],diff);
-  }
-
-  double tol = 1.e-8;
-  int ca = 0; // counter above threshold
-  int cb = 0; // counter below threshold
-  for(int i=0;i<Nloc*Nloc;i++){
-    double diff = test_chi2[i] - chi2->values[i];
-    if( abs(diff) > tol ){
-      ca++;
-    } else if( abs(diff) > 0.0 ){
-      cb++;
-    }
-  }
-  double pc_a = (double) 100.0*ca/(Nloc*Nloc); // percentage above threshold
-  double pc_b = (double) 100.0*cb/(Nloc*Nloc); // percentage below threshold
-  printf("Diff. above / below tolerance (%e) out of %d chi2 values: %d (%6.2f%%) / %d (%6.2f%%)\n",tol,Nloc*Nloc,ca,pc_a,cb,pc_b);
-  
-  free(test_chi2);
 }
 
 

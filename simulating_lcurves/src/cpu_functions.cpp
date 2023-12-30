@@ -158,13 +158,13 @@ Chi2Vars setup_chi2_calculation(std::vector<double> M,std::vector<double> V,doub
 
 /*
 SUMMARY:
-Calculates z and then sorts the precacalculated chi2 values according to it.
+Sets the sorted indices of the Nloc*Nloc pairs according to their z, the lower_ind and n_per_bin arrays for the binned z and chi2, and bins z. 
 
 INPUT:
-\param Nloc -- The size of the sampled pairs.
 \param LCA -- A filled instance of SimLC for image A.
-\param LCB -- Same for image B.
-\param chi2_values -- A pointer to the 'values' variable from a pre-computed instance of Chi2 - this is a pointer to CPU memory.
+\param LCB -- Same for image B.  
+\param mpd_ratio -- An instance of Mpd that holds the probability density of the ratio of magnifications between images A and B. We need this to get the bin limits. 
+\param sort_struct -- An empty instance of Chi2SortBins that will be filled by this function. 
 
 FUNCTION:
 First use the first value of every light curve in LCA and LCB to calculate the ratio, z, of all the possible pairs (size of Nloc*Nloc).
@@ -172,33 +172,30 @@ Then, sort z and a sequence of indices together, in order to keep the permutated
 Use the permuated indices and a copy of the chi2 values to reorder the chi2_values.
 
 OUTPUT:
-The re-arranged values of chi2_values, sorted by z.
+The filled given Chi2SortBins object.
 */
-void sort_chi2_by_z_CPU(int Nloc,SimLC* LCA,SimLC* LCB,double* chi2_values){
-  
+void setup_integral_CPU(SimLC* LCA,SimLC* LCB,Mpd* mpd_ratio,Chi2SortBins* sorted){
+  int Nloc = LCA->Nloc;
+  int Nprof = LCA->Nprof;
+
+  // Calculate z
   double* z = (double*) malloc(Nloc*Nloc*sizeof(double));
   for(int a=0;a<Nloc;a++){
     for(int b=0;b<Nloc;b++){
-      z[a*Nloc+b] = LCA->LC[a*LCA->Nprof]/LCB->LC[b*LCB->Nprof];
+      z[a*Nloc+b] = LCA->LC[a*Nprof]/LCB->LC[b*Nprof];
     }
   }
 
       
-  std::vector<unsigned int> idx(Nloc*Nloc);
-  std::iota(idx.begin(), idx.end(), 0);
-  std::stable_sort(idx.begin(), idx.end(), [&z](size_t i1, size_t i2) {return z[i1] < z[i2];});
-  
-  double* tmp = (double*) malloc(Nloc*Nloc*sizeof(double));
-  std::memcpy(tmp,chi2_values,Nloc*Nloc*sizeof(double));
-  double* tmp_z = (double*) malloc(Nloc*Nloc*sizeof(double));
-  std::memcpy(tmp_z,z,Nloc*Nloc*sizeof(double));
-  for(int i=0;i<Nloc*Nloc;i++){
-    chi2_values[i] = tmp[idx[i]];
-    z[i] = tmp_z[idx[i]];
-  }
+  std::vector<unsigned int> tmp(Nloc*Nloc);
+  std::iota(tmp.begin(),tmp.end(),0);
+  std::stable_sort(tmp.begin(),tmp.end(), [&z](size_t i1, size_t i2) {return z[i1] < z[i2];});
+  std::iota(sorted->sorted_ind,sorted->sorted_ind+Nloc*Nloc,0);
+  std::stable_sort(sorted->sorted_ind,sorted->sorted_ind+Nloc*Nloc, [&tmp](size_t i1, size_t i2) {return tmp[i1] < tmp[i2];});
 
-  free(tmp);
-  free(tmp_z);
+
+  // Find lower indices and N per bin
+
   free(z);
 }
 
@@ -211,20 +208,24 @@ Calculate the chi2 values on the CPU.
 INPUT:
 \param chi2_vars -- An instance of Chi2Vars, that containes all the pre-computed variables that facilitate the chi2 calculation.
 \param chi2_values -- A pointer to the 'values' variable from an empty instance of Chi2 - this is a pointer to CPU memory.
+\param sort_struct -- An filled instance of Chi2SortBins, from which we use the 'd_sorted_ind' variable.
 \param LCA -- A filled instance of SimLC for image A.
 \param LCB -- Same for image B.  
 
 FUNCTION:
 We loop over the LCA and LCB light curves and form all the possible pairs (size of Nloc*Nloc).
 For each combination, we calculate the chi2 value in a third, innermost loop.
+The order is dictated by the sorted indices of the corresponding z values.
 
 OUTPUT:
 The computed chi2 values are stored in the provided chi2_values pointer, a pointer to CPU memory from a Chi2 instance.
+Because we use the indices 'sorted' from an instance of Chi2SortBins, which map the a and b indices to light curves from images A and B to the ordered memory location of the chi2 array (sorted according to the corresponding z), the chi2 values are stored in the right order.
 */
-void calculate_chi2_CPU(Chi2Vars* chi2_vars,double* chi2_values,SimLC* LCA,SimLC* LCB){
+void calculate_chi2_CPU(Chi2Vars* chi2_vars,double* chi2_values,Chi2SortBins* sort_struct,SimLC* LCA,SimLC* LCB){
   int Nloc  = LCA->Nloc;
   int Nprof = LCA->Nprof;
   double mA,mB,tmp,chi2_val;
+  int sorted_index;
   
   for(int a=0;a<Nloc;a++){
     for(int b=0;b<Nloc;b++){
@@ -246,7 +247,8 @@ void calculate_chi2_CPU(Chi2Vars* chi2_vars,double* chi2_values,SimLC* LCA,SimLC
 	tmp = (chi2_vars->new_d[i] - (mA/mB))/chi2_vars->new_s[i];
 	chi2_val += tmp*tmp;
       }
-      chi2_values[a*Nloc+b] = chi2_val;
+      sorted_index = sort_struct->sorted_ind[a*Nloc+b];
+      chi2_values[sorted_index] = chi2_val;
 
     }
   }

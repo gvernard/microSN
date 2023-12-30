@@ -42,6 +42,7 @@ public:
   Chi2SortBins(int Nloc,int Nbins);
   Chi2SortBins(const Chi2SortBins& other); // The copy constructor is not expected to be used
   ~Chi2SortBins();
+  void transfer_to_CPU();
 };
 
 

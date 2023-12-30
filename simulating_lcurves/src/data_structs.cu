@@ -85,6 +85,11 @@ Chi2SortBins::~Chi2SortBins(){
   cudaFree(d_sorted_ind);
 }
 
+void Chi2SortBins::transfer_to_CPU(){
+  cudaMemcpy(this->sorted_ind,this->d_sorted_ind,this->Nloc*this->Nloc*sizeof(unsigned int),cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
+}
+
 
 
 SimLC::SimLC(int Nloc,int Nprof): Nloc(Nloc),Nprof(Nprof) {
