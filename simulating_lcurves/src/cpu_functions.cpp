@@ -132,27 +132,16 @@ Chi2Vars setup_chi2_calculation(std::vector<double> M,std::vector<double> V,doub
     }
   }
 
+
+  // Calculate constant term of the chi2 sum
+  if( Njp != Nd ){
+    for(int i=Nd-Njp;i<Nd;i++){
+      vars.const_term += pow((d[i]-1)/s[i],2);
+    }
+  }
+  
   return vars;
 }
-
-
-/*
-  
-  // Calculate integral over z on the GPU
-
-  
-  // Add constant term to the integral
-  if( Njp != Nd ){
-    double extra_sum = 0.0;
-    for(int i=Nd-Njp;i<Nd;i++){
-      extra_sum += pow((d[i]-1)/s[i],2);
-    }
-    log_integral += -extra_sum/2.0;
-  }
-
-  return log_integral;
-}
-*/
 
 
 

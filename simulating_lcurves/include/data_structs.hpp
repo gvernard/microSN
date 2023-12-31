@@ -10,7 +10,8 @@ public:
   double* facB;   // size of Nj
   double* new_d;  // size of Nj
   double* new_s;  // size of Nj
-
+  double const_term;
+  
   Chi2Vars(int Njp);
   Chi2Vars(const Chi2Vars& other);
   ~Chi2Vars();

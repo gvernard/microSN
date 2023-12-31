@@ -12,6 +12,7 @@ Chi2Vars::Chi2Vars(int Njp): Njp(Njp) {
   this->facB  = (double*) malloc(this->Njp*sizeof(double));
   this->new_d = (double*) malloc(this->Njp*sizeof(double));
   this->new_s = (double*) malloc(this->Njp*sizeof(double));
+  this->const_term = 0.0;
 }
 
 Chi2Vars::Chi2Vars(const Chi2Vars& other): Chi2Vars(other.Njp){
@@ -21,6 +22,7 @@ Chi2Vars::Chi2Vars(const Chi2Vars& other): Chi2Vars(other.Njp){
   std::memcpy(this->facB,other.facB,this->Njp*sizeof(double));
   std::memcpy(this->new_d,other.new_d,this->Njp*sizeof(double));
   std::memcpy(this->new_s,other.new_s,this->Njp*sizeof(double));
+  this->const_term = other.const_term;
 }
 
 Chi2Vars::~Chi2Vars(){

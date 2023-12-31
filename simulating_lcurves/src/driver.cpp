@@ -35,7 +35,7 @@ int main(int argc,char* argv[]){
   fin.close();
 
   //bool compare_cpu = true;
-  bool compare_cpu = true;
+  bool compare_cpu = false;
 
   // Define parameters and perform checks for LC simulator code 
   int Nprof = input["sizes"].size();
@@ -214,17 +214,16 @@ int main(int argc,char* argv[]){
 
  
   bin_chi2_GPU(binned_chi2_GPU,binned_exp_GPU,&sort_struct,chi2.d_values);
-  //double integral_gpu = trapezium(ratio.Nbins,binned_exp_GPU,ratio.counts,ratio.bins);
-  double integral_gpu = simpson(ratio.Nbins,binned_exp_GPU,ratio.counts,ratio.bins);
-
+  double integral_gpu = trapezium(ratio.Nbins,binned_exp_GPU,ratio.counts,ratio.bins);
+  //double integral_gpu = simpson(ratio.Nbins,binned_exp_GPU,ratio.counts,ratio.bins);
 
   if( compare_cpu ){
     chi2.transfer_to_CPU();
     double* binned_chi2_CPU = (double*) malloc(Nbins_ratio*sizeof(double));
     double* binned_exp_CPU  = (double*) malloc(Nbins_ratio*sizeof(double));
     bin_chi2_CPU(binned_chi2_CPU,binned_exp_CPU,&sort_struct,chi2.values);    
-    //double integral_cpu = trapezium(ratio.Nbins,binned_exp_CPU,ratio.counts,ratio.bins);
-    double integral_cpu = simpson(ratio.Nbins,binned_exp_CPU,ratio.counts,ratio.bins);
+    double integral_cpu = trapezium(ratio.Nbins,binned_exp_CPU,ratio.counts,ratio.bins);
+    //double integral_cpu = simpson(ratio.Nbins,binned_exp_CPU,ratio.counts,ratio.bins);
     std::cout << "GPU: " << integral_gpu << "  CPU: " << integral_cpu << std::endl;
     free(binned_chi2_CPU);
     free(binned_exp_CPU);
@@ -232,6 +231,8 @@ int main(int argc,char* argv[]){
     std::cout << "GPU: " << integral_gpu << std::endl;
   }
 
+  double like = integral_gpu*exp(-0.5*chi2_vars.const_term);
+  
 
   // OUTPUT: Write binned exp(0.5*chi2) and number of values per bin 
   fh  = fopen("binned_exp.dat","w");
