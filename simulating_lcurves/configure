@@ -665,6 +665,7 @@ LTLIBOBJS
 LIBOBJS
 NVCC
 CUDA_LIBS
+CUDA_FLAGS
 CUDA_CFLAGS
 MAP_PATH
 CXXCPP
@@ -17007,8 +17008,10 @@ fi
 
 ##########################################################################
 CUDA_CFLAGS="-std=c++11 --compiler-options '-fPIC' -Wno-deprecated-gpu-targets"
+CUDA_FLAGS="-Xcudafe --diag_suppress=611"
 CUDA_LIBS="-lcudart -lcufft"
 NVCC="nvcc"
+
 
 
 

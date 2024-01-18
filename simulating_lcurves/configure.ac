@@ -93,10 +93,12 @@ AC_SUBST([MAP_PATH])
 
 ##########################################################################
 CUDA_CFLAGS="-std=c++11 --compiler-options '-fPIC' -Wno-deprecated-gpu-targets"
+CUDA_FLAGS="-Xcudafe --diag_suppress=611"
 CUDA_LIBS="-lcudart -lcufft"
 NVCC="nvcc"
 
 AC_SUBST(CUDA_CFLAGS)
+AC_SUBST(CUDA_FLAGS)
 AC_SUBST(CUDA_LIBS)
 AC_SUBST(NVCC)
 ##########################################################################

@@ -2,8 +2,8 @@ ACLOCAL_AMFLAGS=-I m4
 
 
 
-BUILT_SOURCES = libmagmap.la libcommon.la libgpu.la
-noinst_LTLIBRARIES = libmagmap.la libcommon.la libgpu.la
+BUILT_SOURCES = libmagmap.la libgpu.la libcommon.la
+noinst_LTLIBRARIES = libmagmap.la libgpu.la libcommon.la
 
 
 # MAP PATH
@@ -29,7 +29,7 @@ libcommon_la_LIBADD = -lmagmap
 
 # GPU functions
 .cu.o:
-	@NVCC@ @CUDA_CFLAGS@ -o $@ -c $<
+	@NVCC@ @CUDA_FLAGS@ @CUDA_CFLAGS@ -o $@ -c $<
 .cu.lo:
 	python $(top_srcdir)/cudalt.py $@ @NVCC@ \
 	--compiler-options=\"$(CFLAGS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) @CUDA_LIBS@\" -c $<

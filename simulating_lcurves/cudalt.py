@@ -33,7 +33,8 @@ except OSError:
 
 # generate the command to compile the .cu for shared library
 args = sys.argv[2:]
-args.extend(["-Xcompiler","-fPIC"]) # position indep code
+args.extend(["-Xcompiler","-fPIC","-Xcudafe --diag_suppress=611"]) # position indep code
+#args.extend(["-Xcompiler","-fPIC"]) # position indep code
 args.append("-o")
 args.append(pic_filepath)
 command = " ".join(args)
@@ -46,6 +47,7 @@ if rv != 0:
 
 # generate the command to compile the .cu for static library
 args = sys.argv[2:]
+args.extend(["-Xcudafe --diag_suppress=611"]) # position indep code
 args.append("-o")
 args.append(npic_filepath)
 command = " ".join(args)
